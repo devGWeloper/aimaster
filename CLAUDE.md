@@ -8,7 +8,7 @@
 
 - 도메인: 반도체 장비가 PM·부품 교체·알람으로 Down된 뒤 Seasoning·Qual 판정을 거쳐 Up되는 AutoQual 업무
 - 핵심 구조: Super Agent가 기준정보(`spec_agent`)·로그분석(`log_agent`)·레거시DB(`legacy_agent`) Agent를 편성하고, 모든 Agent는 CodeAct(Python 코드를 행동으로 실행)로 동작
-- Self-Evolving: Grow(새 Agent 생성) / Heal(오류 자가 복구) / Evolve(5계층 개선: 파라미터·프롬프트 → 스킬 → Agent 코드 → Agent 구성 → Super Agent 편성 전략), 변이 → 평가 → 선택 → 보관 사이클
+- Self-Evolving: Grow(새 Agent 생성) / Heal(오류 자가 복구) / Evolve(5계층 개선: 파라미터·프롬프트 → 스킬 → Agent 코드 → Agent 구성(생성·병합·폐기) → Super Agent 편성 전략), 변이 → 평가 → 선택 → 보관 사이클. 불필요 Agent는 Retire 절차(의존성 분석 → 대체 검증 → `deprecated` 유예 → 사람 승인 → `retired` 아카이브 보관)로 정리
 - Loop Engineering: L1 Task / L2 Heal·Grow(최대 5회·15분) / L3 Evolve 3중 루프, 예산·종료 조건·검증 게이트
 - 이력 리플레이 진화: 3년치 과거 Qual 이력을 시간순 재생(Walk-forward, 최근 6개월 Held-out), Time-Travel Guard로 미래 정보 누출 차단
 - Jev 판단 게이트: 루프 내 반복 분기 판단은 Jev(보정 확률), 코드 작성·계획은 LLM, Spec 판정·권한은 결정적 코드

@@ -52,10 +52,10 @@ Agent의 정체성, 역할, 그리고 답변의 톤앤매너를 정의합니다.
 | ------------ | -------------------------- |
 | **항목**       | **정의 내용**                  |
 | **Agent 이름** | Agent Factory (`factory`) · Healer (`healer`) · Evolver (`evolver`) |
-| **주요 역할**    | Grow: 처리 불가 요청에 대해 새 Agent 명세·코드·테스트를 작성해 `probation` 등록. Heal: 오류 유형 분류 결과에 따라 자기 코드 패치 → 회귀 테스트 → 반영. Evolve: 지표·경험 메모리 분석으로 5계층(파라미터·프롬프트 / 스킬 / Agent 코드 / Agent 구성 / Super Agent 편성 전략) 개선 후보를 생성하고 변이 → 평가 → 선택 → 보관 사이클 수행 |
+| **주요 역할**    | Grow: 처리 불가 요청에 대해 새 Agent 명세·코드·테스트를 작성해 `probation` 등록. Heal: 오류 유형 분류 결과에 따라 자기 코드 패치 → 회귀 테스트 → 반영. Evolve: 지표·경험 메모리 분석으로 5계층(파라미터·프롬프트 / 스킬 / Agent 코드 / Agent 구성 / Super Agent 편성 전략) 개선 후보를 생성하고 변이 → 평가 → 선택 → 보관 사이클 수행. Retire(Agent 구성 계층): 장기 미사용(직접·간접 호출 60일 0건, 주기적 사용 제외)·대체(다른 Agent가 회귀 케이스·최근 요청 100% 커버)된 Agent를 의존성 분석·대체 경로 검증 후 `deprecated`(14일 유예·리다이렉트) → 운영자 승인 후 `retired`(아카이브 보관) |
 | **핵심 목표**    | 사람 개입 없이 Agent 생성 성공률 70%, 오류 자가 복구율 70%·MTTR 10분 이내, Held-out 비하락 조건에서 구조·판단 개선 |
 | **톤앤매너**     | 운영자 대상 리포트체: 감지 내용 → 원인 → 조치(diff 라인 수) → 검증 결과(테스트 통과 수, Evolve셋/Held-out셋 점수) → 반영 버전 순으로 기술, 채택·기각 사유 명시 |
-| **제약 사항**    | 평가 하네스·Held-out셋·루프 예산 수정 금지, 블랙리스트 패치 재시도 금지, 회귀 테스트 1건이라도 실패한 패치 반영 금지, Agent `active` 정식 승격은 운영자 승인 필수, 허용 모듈 외 import 금지, 모델 가중치 학습·파인튜닝 금지 |
+| **제약 사항**    | 평가 하네스·Held-out셋·루프 예산 수정 금지, 블랙리스트 패치 재시도 금지, 회귀 테스트 1건이라도 실패한 패치 반영 금지, Agent `active` 정식 승격과 `retired` 전환은 운영자 승인 필수(루프 자율은 되돌릴 수 있는 `deprecated`까지), Agent 하드 삭제 금지(`retired`도 Genome·테스트·Lineage 아카이브 보관), 기본 Agent(`super_agent`·`spec_agent`·`log_agent`·`legacy_agent`) 폐기 금지, 변경성 판단 임계값 하한(0.95) 변이 금지, 허용 모듈 외 import 금지, 모델 가중치 학습·파인튜닝 금지 |
 
 ### 워크플로우 및 오케스트레이션 (Workflow & Logic)
 
@@ -87,6 +87,13 @@ Agent의 정체성, 역할, 그리고 답변의 톤앤매너를 정의합니다.
   * `loop_budget`: 루프별 반복 횟수·경과 시간·토큰 사용량
   * `replay_clock`: 리플레이 모드 시 재생 시점(Time-Travel Guard 기준 시각), 운영 모드 시 `null`
 
+* Agent 생명주기 상태 (Registry `status`)
+  * `probation`(Grow 생성 직후) → `active`(운영자 승인) → `deprecated`(폐기 유예: 편성 후보 제외, 호출은 대체 Agent로 리다이렉트, 원 Agent는 Fallback으로 유지) → `retired`(운영자 승인, 편성·Heal·회귀 대상 제거, 아카이브 보관)
+  * `shadow`: 승격 전 Shadow 운영 및 승격 후 7일간 직전 버전 병행 비교용
+  * 복원: `retired` → `probation` (유사 요청 시 아카이브 Genome을 현재 스키마로 재테스트 후 복원), 유예 중 대체 실패 시 대체 Agent Heal 후 유예 재시작
+
+* 버전 규칙: `0.x.y` probation, `1.0.0` 첫 active 승격, PATCH = Heal 패치, MINOR = Evolve 채택(판단 로직·성능·공용 스킬 적용), MAJOR = Agent 구성 변경(병합·기능 흡수·분리). 롤백 시 직전 안정 버전으로 복귀하고 결함 버전 번호는 재사용하지 않음
+
 * LangGraph Node/Edge 흐름
   * **L1 Task Loop (요청 단위)**
     * `parse_request` → `retrieve_memory` → `jev_route`
@@ -100,9 +107,10 @@ Agent의 정체성, 역할, 그리고 답변의 톤앤매너를 정의합니다.
     * `deterministic_judge` --(Fail)--> `plan_codeact` (재Seasoning 계획)
   * **L2 Heal/Grow Loop (이벤트 단위, 최대 5회·15분)**
     * Heal: `jev_classify_error`(포맷 변경 / 스키마 변경 / 기준정보 누락 / 로직 오류 / 외부 장애 / 복구 불가) → `diagnose_codeact` → `write_patch` → `check_blacklist` → `run_regression` --(전부 통과)--> `register_version` → `reanswer_pending` / --(실패)--> `blacklist_patch` → `diagnose_codeact` / --(복구 불가 또는 예산 소진)--> `escalate_operator`. 복구 중에는 이전 정상 버전 Fallback
-    * Grow: `write_spec` → `explore_schema` → `generate_code_and_tests` → `run_tests` --(통과)--> `register_probation` → L1 `execute_sandbox` 복귀 / --(실패)--> `generate_code_and_tests` / --(예산 소진)--> `abort_with_reason`
+    * Grow: `search_archive`(기각·`retired` Genome 유사 검색) --(유사 Genome 있음)--> `restore_genome` → `run_tests` / --(없음)--> `write_spec` → `explore_schema` → `generate_code_and_tests` → `run_tests`(자체 테스트 + 하네스 불변식 테스트: 행 수 대조·단위 범위·기간 경계) --(통과)--> `register_probation` → L1 `execute_sandbox` 복귀 / --(실패)--> `generate_code_and_tests` / --(예산 소진)--> `abort_with_reason`
   * **L3 Evolve Loop (운영 중 일 1회 야간, 리플레이 시 분기 단위)**
-    * `collect_metrics`(중복률·응답시간·성공률·사용 빈도·Override율·편성 기여도) → `jev_need_evolve` → `mutate`(1회 최대 3개 후보, 진화 아카이브에서 출발점 선택) → `evaluate_harness`(루프 밖 고정 하네스, Evolve셋 + Held-out셋/백테스트 기간) → `select`(Evolve셋 개선 & Held-out 비하락) → `archive`(채택·기각 모두 보관) → `shadow_run` --(이상 없음)--> `promote`(Agent 정식 승격은 운영자 승인) / --(판정 불일치)--> `auto_rollback` → 불일치 샘플 Held-out셋 추가
+    * `collect_metrics`(중복률·응답시간·성공률·사용 빈도·Override율·편성 기여도) → `jev_need_evolve` → `mutate`(1회 최대 3개 후보, 진화 아카이브에서 출발점 선택) → `evaluate_harness`(루프 밖 고정 하네스, Evolve셋 + Held-out셋/백테스트 기간) → `select`(Evolve셋 개선 & Held-out 비하락) → `archive`(채택·기각 모두 보관) → `shadow_run`(장비군별 최소 10건, 부족 시 리플레이 이력 샘플 보충) --(이상 없음)--> `promote`(Agent 정식 승격은 운영자 승인, 승격 후 7일간 직전 버전 Shadow 병행) / --(판정 불일치)--> `auto_rollback`(결함 공용 스킬에 의존하는 Agent 전체를 Lineage 기준으로 원자적 롤백) → 불일치 샘플 Held-out셋 추가
+    * Retire 분기: `collect_metrics`(직접·간접 호출 수·마지막 호출일·기능 중첩도·회귀 커버리지) → `jev_need_retire` → `analyze_dependency`(편성 템플릿·타 Agent 내부 호출·공용 스킬·하네스 케이스) --(간접 의존 있음)--> `archive`(hold) / --(없음)--> `verify_replacement`(회귀 + 최근 30일 실제 요청을 대체 Agent로 재실행, 100% 일치) → `migrate_tests` → `deprecate`(14일 유예) --(유예 중 대체 실패)--> 원 Agent Fallback → 대체 Agent `heal_subgraph` → `verify_replacement` 재수행 / --(이상 없음)--> `approval_gate`(운영자) → `retire` → `archive`
   * **History Replay 모드**: `build_replay_requests`(레거시 이력 → 시간순 가상 요청) → `set_replay_clock` → L1 그래프 실행 → `compare_actual`(당시 실제 결과와 차이를 경험 메모리 기록) → 분기 종료 시 L3 실행(Walk-forward) → 최근 6개월 Held-out 기간은 진화 없이 최종 평가만 수행
   * Checkpointer로 스레드별 상태를 저장해 `await_qual_result`·`approval_gate` interrupt 이후 재개
 
@@ -130,7 +138,9 @@ Agent가 외부 세상과 상호작용하기 위해 사용할 도구(Function Ca
 | `run_tests`             | Agent 자가 테스트·회귀 테스트 실행 | `agent_id: str`, `version: str`<br>`suites: list[str]` / unit, regression, new_format | `{passed: int, failed: int, failures: list[{case, error}]}` |
 | `evaluate_candidate`    | 루프 밖에서 고정된 평가 하네스로 후보 채점(루프는 호출만 가능, 수정 불가) | `candidate_id: str`<br>`sets: list["evolve" \| "heldout" \| "backtest"]` | `{scores: dict[set, {accuracy, first_pass_rate, wafer_usage, latency_p50, calls_per_req}], delta_vs_base: dict}` |
 | `archive_candidate`     | 채택·기각 후보를 점수·사유와 함께 진화 아카이브에 저장 | `candidate_id: str`<br>`decision: "adopt" \| "reject" \| "hold"`<br>`reason: str` | `{archive_id: str}` |
-| `promote_or_rollback`   | Shadow 결과 기반 승격 또는 이전 버전 롤백 | `agent_id: str`<br>`action: "promote" \| "rollback"`<br>`target_version: str` | `{agent_id, active_version, previous_version, approved_by: str \| null}` |
+| `promote_or_rollback`   | Shadow 결과 기반 승격 또는 이전 버전 롤백(공용 스킬 롤백 시 의존 Agent 동시 롤백) | `agent_id: str`<br>`action: "promote" \| "rollback"`<br>`target_version: str` | `{agent_id, active_version, previous_version, cascaded: list[{agent_id, from, to}], approved_by: str \| null}` |
+| `analyze_dependency`    | Agent의 직접·간접 호출 이력과 의존 관계(편성 템플릿·타 Agent 내부 호출·공용 스킬·하네스 케이스) 분석 | `agent_id: str`<br>`window_days: int` | `{direct_calls: int, indirect_calls: int, last_called_at: datetime, periodic: bool, dependents: list[{kind, ref}], unique_test_cases: list[str]}` |
+| `registry_lifecycle`    | Agent 생명주기 전환(유예·폐기·복원). `retire`는 운영자 승인 필수, 기본 Agent는 거부 | `agent_id: str`<br>`action: "deprecate" \| "retire" \| "restore"`<br>`replacement: str \| null` / 리다이렉트 대상<br>`reason: str` / unused, superseded | `{agent_id, status, grace_until: datetime \| null, archive_id: str \| null, approved_by: str \| null}` |
 | `patch_blacklist`       | 실패 패치 해시 등록·조회로 동일 시도 반복 차단 | `action: "add" \| "check"`<br>`patch_hash: str`<br>`error_signature: str` | `{blacklisted: bool}` |
 | `build_replay_requests` | 레거시 Qual 이력을 당시 로그·부품 교체 이력·조치와 묶어 시간순 가상 요청으로 재구성 | `eqp_models: list[str]`<br>`start: date`, `end: date`<br>`heldout_start: date` | `{requests: list[{replay_ts, request_text, actual_outcome_ref}], count: int}` |
 | `set_replay_clock`      | Time-Travel Guard 기준 시각 설정. 이후 모든 데이터 도구가 해당 시각 이후 데이터 차단 | `ts: datetime \| null` / null이면 운영 모드 | `{replay_clock: datetime \| null, guard: "ON" \| "OFF"}` |
@@ -142,7 +152,7 @@ LLM이 기억해야 할 단기 대화 내역과 참조해야 할 장기 데이�
 
 **4.1 장기 메모리 전략 (RAG 미사용)**
 
-* **RAG 미사용 사유:** 참조 대상이 모두 장비 모델·챔버·PM 종류·시점 키로 정확히 조회되는 정형 데이터(기준정보 DB, FDC·알람 로그, 레거시 DB, Agent Registry, 경험 메모리)이므로 유사도 검색 대신 CodeAct로 작성한 조회 코드(SQL·필터)로 직접 조회. 근사 검색으로 인한 다른 장비·다른 PM 사례 혼입을 막고, Time-Travel Guard를 `event_ts ≤ replay_clock` 조건 하나로 강제 가능
+* **RAG 미사용 사유:** 참조 대상이 모두 장비 모델·챔버·PM 종류·시점 키로 정확히 조회되는 정형 데이터(기준정보 DB, FDC·알람 로그, 레거시 DB, Agent Registry, 경험 메모리)이므로 유사도 검색 대신 CodeAct로 작성한 조회 코드(SQL·필터)로 직접 조회. 근사 검색으로 인한 다른 장비·다른 PM 사례 혼입을 막고, Time-Travel Guard를 `event_ts ≤ replay_clock` 조건 하나로 강제 가능. `event_ts`가 없는 테이블은 기본 차단하고, 정적 기준 데이터(코드값 사전·Spec·Seasoning 레시피)는 `valid_from`/`valid_to` 유효기간 버전으로만 조회해 "미래에 정의된 코드값·Spec" 누출을 차단
 
 * **참조 데이터 소스:**
   * 기준정보 DB: Qual 절차·Spec·Seasoning 레시피 매핑 (`query_spec_db`)
