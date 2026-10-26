@@ -419,13 +419,13 @@ const Approvals = {
    ══════════════════════════════════════════════════════════ */
 const Fab = {
   open() {
-    const v = $('#view-fab');
+    const v = $('#fab-grid');
     const fab = A.state.fab || [];
     const by = {};
     for (const c of fab) { const eqp = c.chamber_id.slice(0, c.chamber_id.lastIndexOf('-')); (by[eqp] ||= []).push(c); }
     v.innerHTML = '';
     const cnt = fab.reduce((m, c) => { m[c.state] = (m[c.state] || 0) + 1; return m; }, {});
-    v.append(pageHead('Fab 현황', `장비 30대 · 챔버 90개 — 생산 ${cnt.RUN || 0} · Down ${cnt.DOWN || 0} · Qual 진행 ${cnt.QUAL || 0} · Up 승인 대기 ${cnt.APPROVAL || 0}`));
+    v.append(pageHead('Fab 현황', `장비 30대 · 챔버 90개 — 생산 ${cnt.RUN || 0} · Down ${cnt.DOWN || 0} · Qual 진행 ${cnt.QUAL || 0} · Up 승인 대기 ${cnt.APPROVAL || 0} · 왼쪽은 Agent가 수행 중인 AutoQual 업무 흐름`));
     const grid = h('div', { class: 'fab-grid' });
     const MODEL = (e) => (e.startsWith('ETCH') ? (Number(e.slice(5)) <= 8 ? 'ETX-300' : 'ETX-500') : e.startsWith('CVD') ? 'CVX-200' : 'PVX-100');
     for (const [eqp, chs] of Object.entries(by)) {
@@ -483,7 +483,7 @@ export const Views = {
     const m = { trace: Trace, replay: Replay, reports: Reports, registry: Registry, archive: Archive, approvals: Approvals, fab: Fab, kpi: Kpi }[view];
     if (!m) return;
     if (soft && view === 'trace') return;
-    m.open().catch((e) => console.error(e));
+    Promise.resolve(m.open()).catch((e) => console.error(e));
   },
   openAgent(id) { Registry.open(id); },
   openReport(id) { A.go('reports'); Reports.open(id); },

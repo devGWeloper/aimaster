@@ -1,13 +1,14 @@
-// 앱 코어 — 상태, SSE 이벤트 스트림, 상단 제어, 챕터 타임라인, 승인 게이트, 라우팅
+// 앱 코어 — 상태, SSE 이벤트 스트림, 상단 제어, 챕터 타임라인, 승인 게이트, 라우팅 (기본 화면: Agent 무대 board.js)
 import { $, $$, h, api, vdate, debounce, AGENT_KO } from './util.js';
 import { Live } from './live.js';
-import { Flow } from './flow.js';
+import { StageView } from './board.js';
+import { Biz } from './biz.js';
 import { Views } from './views.js';
 
 export const App = {
   state: null,
   handlers: {},
-  view: 'flow',
+  view: 'stage',
   loadedAt: Date.now() / 1000,
   lastSeq: 0,
   on(type, fn) { (this.handlers[type] ||= []).push(fn); },
@@ -190,7 +191,7 @@ function go(view) {
   document.body.dataset.view = view;
   $$('#rail button').forEach((b) => b.classList.toggle('on', b.dataset.view === view));
   $$('.view').forEach((v) => v.classList.toggle('on', v.id === `view-${view}`));
-  if (view === 'flow') Flow.shown();
+  if (view === 'stage') StageView.shown();
   else if (view !== 'live') Views.open(view);
   location.hash = view;
 }
@@ -234,12 +235,13 @@ function bind() {
 async function boot() {
   bind();
   await refresh();
-  Flow.init(App);
+  StageView.init(App);
+  Biz.init(App, $('#fab-biz'));
   Live.init(App);
   Views.init(App);
   connect();
   const hv = location.hash.replace('#', '');
-  if (hv && hv !== 'flow') go(hv);
+  if (hv && hv !== 'stage') go(hv);
   setInterval(refresh, 15000);
 }
 boot();

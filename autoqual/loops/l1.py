@@ -265,11 +265,19 @@ class L1:
             lat["ms"] += r.get("io_ms", 0) + r.get("elapsed_ms", 0)
             return r["output"] if r["ok"] else _unavail(r)
 
+        muted = self.sys.bus.mute_depth > 0      # 배경 운영(muted) 요청은 병렬 스레드에서도 UI 이벤트를 내지 않는다 (mute는 스레드 로컬)
+
+        def _run(a, act, inp):
+            if muted:
+                with self.sys.bus.muted():
+                    return self.sys.runtime.run_agent(ctx, a, act, dict(inp))
+            return self.sys.runtime.run_agent(ctx, a, act, dict(inp))
+
         def parallel(*specs):
             if sequential or len(specs) == 1:
                 rs = [self.sys.runtime.run_agent(ctx, a, act, dict(inp)) for a, act, inp in specs]
             else:
-                futs = [_POOL.submit(self.sys.runtime.run_agent, ctx, a, act, dict(inp)) for a, act, inp in specs]
+                futs = [_POOL.submit(_run, a, act, inp) for a, act, inp in specs]
                 rs = [f.result() for f in futs]
             runs.extend(rs)
             lat["ms"] += max((r.get("io_ms", 0) + r.get("elapsed_ms", 0)) for r in rs) if rs else 0

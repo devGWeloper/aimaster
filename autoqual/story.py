@@ -165,9 +165,11 @@ class Story:
             rid, tid = pnd.get("request_id"), pnd.get("thread_id")
             if not rid or not pnd.get("inputs"):
                 continue
+            row = self.sys.store.one("SELECT thread_id, source FROM requests WHERE request_id=?", (rid,)) or {}
             if not tid:
-                tid = (self.sys.store.one("SELECT thread_id FROM requests WHERE request_id=?", (rid,)) or {}).get("thread_id")
-            ctx = RunContext(self.sys, mode="ops", request_id=rid, quiet=False)
+                tid = row.get("thread_id")
+            sim = row.get("source") == "sim"          # 배경(가상 엔지니어) 요청의 재응답은 UI 이벤트를 내지 않는다 (요청 자체가 muted)
+            ctx = RunContext(self.sys, mode="ops", request_id=rid, quiet=sim)
             r = self.sys.runtime.run_agent(ctx, heal["agent_id"], pnd["action"], dict(pnd["inputs"]))
             if not r["ok"]:
                 continue
@@ -203,6 +205,8 @@ class Story:
                         self.sys.l1.ops.update_state(cfg, {"synth": syn, "exec": exe})
             except Exception as e:  # noqa: BLE001
                 self.sys.bus.emit("toast", level="error", text=f"재응답 계획 갱신 실패: {e!r}"[:200])
+            if sim:
+                continue
             self.sys.bus.emit("response", request_id=rid, thread_id=tid, rtype="reanswer",
                               blocks=[{"kind": "chamber", "title": f"추가 응답 — {heal['heal_id']} 복구 후 재분석 · {heal['agent_id']} {heal.get('new_version')}",
                                        "lines": lines + ([note] if note else [])}], text="\n".join(lines))

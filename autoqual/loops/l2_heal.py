@@ -117,7 +117,8 @@ class Healer:
     def _emit_node(self, h, node, detail, pace=0.35, **kw):
         if h["replay"] and self.sys.bus.mute_depth:
             return
-        self.sys.bus.emit("node", loop="L2", node=node, heal_id=h["heal_id"], agent_id=h["agent_id"], detail=detail, **kw)
+        self.sys.bus.emit("node", loop="L2", node=node, heal_id=h["heal_id"], agent_id=h["agent_id"], detail=detail,
+                          request_id=((h.get("pending") or [{}])[0] or {}).get("request_id"), version=h.get("version"), **kw)
         self.sys.bus.pace(pace)
 
     def _budget(self, h) -> dict:

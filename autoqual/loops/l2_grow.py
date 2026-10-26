@@ -158,7 +158,8 @@ class Factory:
     def _node(self, g, node, detail, pace=0.4, **kw):
         if g["replay"] and self.sys.bus.mute_depth:
             return
-        self.sys.bus.emit("node", loop="L2", node=node, grow_id=g["grow_id"], detail=detail, sub="grow", **kw)
+        self.sys.bus.emit("node", loop="L2", node=node, grow_id=g["grow_id"], detail=detail, sub="grow",
+                          request_id=(g.get("request") or {}).get("request_id"), agent_id=g.get("agent_id"), **kw)
         self.sys.bus.pace(pace)
 
     def _ctx(self, g, **kw):

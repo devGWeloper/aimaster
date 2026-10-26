@@ -51,7 +51,7 @@ class AgentRuntime:
 
     # ── 실행 ────────────────────────────────────────────────────────
     def run_agent(self, ctx: RunContext, agent_id: str, action: str, inputs: dict, indirect: bool = False,
-                  _redirected: bool = False, version: str | None = None):
+                  _redirected: bool = False, version: str | None = None, caller: str | None = None):
         reg = self.sys.registry
         a = reg.agent(agent_id)
         if a is None or a["status"] == "retired":
@@ -59,7 +59,7 @@ class AgentRuntime:
                    "error": {"type": "AgentRetired", "message": f"{agent_id}: retired/미등록"}, "violations": [], "elapsed_ms": 0, "io_ms": 0}
             return out["output"] if indirect else out
         if a["status"] == "deprecated" and a.get("replacement") and not _redirected and agent_id not in ctx.overlay and ctx.mode == "ops":
-            r = self.run_agent(ctx, a["replacement"], action, inputs, indirect, _redirected=True)
+            r = self.run_agent(ctx, a["replacement"], action, inputs, indirect, _redirected=True, caller=caller)
             ok = (r.get("status") in ("ok", "partial")) if indirect else r["ok"]
             if ok:
                 if not indirect:
@@ -71,7 +71,7 @@ class AgentRuntime:
             self.sys.events_hook("redirect_failed", agent_id=agent_id, replacement=a["replacement"], inputs=inputs, ctx=ctx,
                                  result=r)
         ver = version or ctx.overlay.get(agent_id) or a["active_version"]
-        res = self._execute(ctx, agent_id, ver, action, inputs, indirect)
+        res = self._execute(ctx, agent_id, ver, action, inputs, indirect, caller=caller)
         if not res["ok"] and ctx.mode == "ops" and not _redirected:
             # 대체 Agent 실패 시 유예 중(deprecated)인 원 Agent로 Fallback (폐기 과정 요청 실패 0건)
             orig = next((x for x in reg.agents("agent") if x["status"] == "deprecated" and x.get("replacement") == agent_id), None)
@@ -97,7 +97,7 @@ class AgentRuntime:
                     "; ".join(v["message"] for v in res["violations"]), "unavailable": ["ALL"]}
         return res
 
-    def _execute(self, ctx: RunContext, agent_id: str, ver: str, action: str, inputs: dict, indirect: bool) -> dict:
+    def _execute(self, ctx: RunContext, agent_id: str, ver: str, action: str, inputs: dict, indirect: bool, caller: str | None = None) -> dict:
         reg = self.sys.registry
         g = reg.genome(agent_id, ver)
         if g is None:
@@ -118,9 +118,11 @@ class AgentRuntime:
                     "error": {"type": "SkillLoadError", "message": str(e)}, "violations": [], "elapsed_ms": 0, "io_ms": 0}
         io0 = ctx.io_ms
         ctx.stack.append(agent_id)
+        caller = caller or ("super_agent" if not indirect else (ctx.stack[-2] if len(ctx.stack) > 1 else "super_agent"))
         if not ctx.quiet:
             self.sys.bus.emit("agent_start", agent_id=agent_id, version=ver, action=action, indirect=indirect,
-                              caller=ctx.stack[-2] if len(ctx.stack) > 1 else "super_agent", request_id=ctx.request_id)
+                              caller=caller, request_id=ctx.request_id,
+                              inputs=compact_inputs(inputs), tools_allowed=sorted(allowed - {"now", "cache_get", "cache_put"}))
         t0 = time.perf_counter()
         r = self.sys.sandbox.execute(g["code"], agent_id, ver, "run", (action, inputs, proxy, skills), timeout_s=12.0,
                                      tool_calls=rec, replay=ctx.replay, vts=ctx.clock().strftime("%Y-%m-%d %H:%M:%S"))
@@ -148,10 +150,16 @@ class AgentRuntime:
         if ctx.mode == "ops" and ctx.run_shadow:
             self.call_stats.append((ctx.clock().strftime("%Y-%m-%d %H:%M:%S"), agent_id, ver, action, out["io_ms"] + out["elapsed_ms"]))
         if not ctx.quiet:
+            # summary = Agent가 실제로 가져온 값(운영 UI 트레이스·편성 그래프에 "어떤 값을 불러왔는지" 표시), tools = 권한 프록시 도구 원장
             self.sys.bus.emit("agent_end", agent_id=agent_id, version=ver, action=action, ok=out["ok"], indirect=indirect,
                               io_ms=out["io_ms"], tool_calls=out["tool_calls"][:12], audit_id=r.audit_id, request_id=ctx.request_id,
                               error=(r.error or {}).get("message") if r.error else (violations[0]["message"] if violations else None),
-                              status=(r.result or {}).get("status") if r.ok and isinstance(r.result, dict) else None)
+                              error_type=(r.error or {}).get("type") if r.error else (violations[0]["type"] if violations else None),
+                              status=(r.result or {}).get("status") if r.ok and isinstance(r.result, dict) else None,
+                              summary=summarize_output(agent_id, action, r.result if r.ok else None),
+                              tools=tool_ledger(rec), inputs=compact_inputs(inputs), elapsed_ms=out["elapsed_ms"],
+                              caller=caller, signature=sig,
+                              violations=[v.get("message") for v in violations][:3], guard=ctx.guard_blocked, replay=ctx.replay)
         return out
 
     # ── 사후 검증 (루프 밖 고정 규칙) ────────────────────────────────
@@ -198,6 +206,140 @@ class AgentRuntime:
         self.shadow_log.append(rec)
         self.sys.bus.emit("shadow", **{k: rec[k] for k in ("agent_id", "primary", "shadow", "mode", "mismatch", "detail", "group", "chamber_id")})
         self.sys.events_hook("shadow_result", rec=rec)
+
+
+def compact_inputs(inputs: dict | None, limit: int = 10) -> dict:
+    """이벤트용 입력 요약 — 스칼라 값만 (대용량 signals 등은 키 수만)."""
+    out = {}
+    for k, v in (inputs or {}).items():
+        if len(out) >= limit:
+            break
+        if isinstance(v, (str, int, float, bool)) or v is None:
+            out[k] = v if not isinstance(v, str) else v[:60]
+        elif isinstance(v, dict):
+            out[k] = f"{{{len(v)}개 항목}}"
+        elif isinstance(v, list):
+            out[k] = f"[{len(v)}개]"
+    return out
+
+
+def tool_ledger(rec: list) -> list[dict]:
+    """권한 프록시 호출 기록 → 도구별 호출 수·소요(ms)·거부 여부."""
+    agg: dict[str, dict] = {}
+    for c in rec or []:
+        t = c.get("tool")
+        a = agg.setdefault(t, {"tool": t, "n": 0, "ms": 0.0, "denied": 0})
+        if c.get("denied"):
+            a["denied"] += 1
+        else:
+            a["n"] += 1
+            a["ms"] += c.get("ms", 0) or 0
+    return [dict(a, ms=round(a["ms"], 1)) for a in agg.values()][:14]
+
+
+def _fv(v) -> str:
+    if isinstance(v, float):
+        if v != 0 and abs(v) < 0.001:
+            return f"{v:.2e}"
+        return f"{v:,.4g}" if abs(v) >= 1000 else f"{v:g}"
+    return str(v)
+
+
+_IND_KO = {"LEAK_RATE": "Leak Rate", "RF_REFL_DELTA": "RF Reflected 변화", "BASE_PRESSURE": "Base Pressure", "RF_STABLE_AT": "RF 안정화 시각",
+           "RF_FWD_CV": "RF Forward 변동", "BP_STABLE_MIN": "BP 안정화", "CYCLE_RF_HOURS": "사이클 RF 누적", "CYCLE_DAYS": "사이클 경과",
+           "REFL_CYCLE_TREND": "사이클 간 Reflected 추이"}
+
+
+def _ind_line(ind: dict) -> str:
+    name, v, u = ind.get("name"), ind.get("value"), ind.get("unit") or ""
+    nm = _IND_KO.get(name, name)
+    if name == "RF_REFL_DELTA" and isinstance(v, (int, float)):
+        return f"{nm} {v:+.1f}%" + (" (Run Summary 폴백)" if ind.get("source") == "run_summary" else "")
+    if name == "BP_STABLE_MIN":
+        return f"{nm} {v}분"
+    if name == "CYCLE_RF_HOURS" and isinstance(v, (int, float)):
+        return f"{nm} {v:,.0f}h" + (f" (시작 {str(ind.get('ref'))[:10]})" if ind.get("ref") else "")
+    if u in ("%",):
+        return f"{nm} {_fv(v)}%"
+    return f"{nm} {_fv(v)} {u}".rstrip()
+
+
+def summarize_output(agent_id: str, action: str, out) -> list[str]:
+    """agent_end 이벤트용 '가져온 값' 요약 — Agent 출력에서 사람이 읽을 핵심 값을 한 줄씩 뽑는다 (최대 8줄)."""
+    if out is None:
+        return []
+    if not isinstance(out, dict):
+        return [str(out)[:100]]
+    L: list[str] = []
+    st = out.get("status")
+    if agent_id == "spec_agent" and action == "lookup":
+        if st == "ok":
+            s = out.get("seasoning") or {}
+            L.append(f"절차 {out.get('procedure_id')} · 모델 {out.get('eqp_model')} · Spec {len(out.get('specs') or [])}항목")
+            L.append(f"기본 Seasoning {s.get('base_count')}매 (레시피 {s.get('recipe_id')})")
+            for x in out.get("specs") or []:
+                lo, up, u = x.get("lower"), x.get("upper"), x.get("unit") or ""
+                L.append(f"Spec {x.get('item')}: " + (f"{_fv(lo)}~{_fv(up)} {u}" if lo is not None and up is not None else f"≤{_fv(up)} {u}"))
+        else:
+            L.append(f"기준정보 조회 실패: {out.get('reason') or out.get('error') or st}")
+    elif agent_id == "spec_agent" and action == "recommend":
+        corr = " ".join(f"{'+' if (c.get('amount') or 0) >= 0 else ''}{c.get('amount')}매[{c.get('lesson_id')}]" for c in out.get("corrections") or [])
+        L.append(f"추천 Seasoning {out.get('count')}매 (기본 {out.get('base')}매{(' ' + corr) if corr else ' · 보정 없음'})")
+        if out.get("required_est") is not None:
+            L.append(f"필요 매수 추정 {out['required_est']}매")
+        for x in out.get("extra_steps") or []:
+            L.append(f"사전 단계: {x.get('step')} [교훈 {x.get('lesson_id')}]")
+        sig = out.get("signals_used") or {}
+        if sig:
+            L.append("입력 신호: " + ", ".join(f"{k}={_fv(v)}" for k, v in list(sig.items())[:5]))
+    else:
+        for ind in (out.get("indicators") or [])[:6]:
+            if isinstance(ind, dict):
+                L.append(_ind_line(ind))
+        al = out.get("alarms")
+        if isinstance(al, list):
+            L.append("PM 후 알람 없음" if not al else f"PM 후 알람 {len(al)}건: " + ", ".join(str(a.get('alarm_code')) for a in al[:3]))
+        if out.get("sw_version") or out.get("format"):
+            L.append(f"로그 포맷 SW {out.get('sw_version') or out.get('format')}")
+        if "n_cases" in out:
+            if out.get("n_cases"):
+                per = out.get("period") or ["", ""]
+                bc = out.get("by_count") or {}
+                L.append(f"동일 조건 Qual 이력 {out['n_cases']}회 ({per[0]} ~ {per[1]})")
+                try:
+                    items = sorted(((int(k), v) for k, v in bc.items()), key=lambda x: x[0])
+                except (TypeError, ValueError):
+                    items = []
+                if items:
+                    L.append("매수별 1차 Pass: " + ", ".join(f"{k}매 {v.get('pass')}/{v.get('n')}" for k, v in items[:5]))
+                dec = [f"{c}={v.get('meaning')}" for c, v in (out.get("decoded") or {}).items() if isinstance(v, dict) and v.get("source")]
+                if dec:
+                    L.append("코드값 해석: " + ", ".join(dec[:4]))
+            else:
+                L.append(f"이력 0건 — {out.get('note') or out.get('absence') or '데이터 부재'}")
+        if isinstance(out.get("measurements"), list) and out["measurements"]:
+            L.append("측정값 " + ", ".join(f"{m.get('item')} {_fv(m.get('value'))}{m.get('unit') or ''}" for m in out["measurements"][:5]))
+        if out.get("part_name") or out.get("installed_at"):
+            L.append(f"{out.get('part_name') or out.get('part')} 장착 {str(out.get('installed_at'))[:10]}" + (f" · Lot {out['lot']}" if out.get("lot") else ""))
+        if isinstance(out.get("buckets"), list):
+            L.append(f"Qual {out.get('n_cases')}건 중 1차 Fail {out.get('n_fail')}건")
+            L.append("구간별 Fail율: " + " / ".join(f"{b.get('bucket')} {round((b.get('rate') or 0) * 100)}% ({b.get('fail')}/{b.get('n')})"
+                                                  for b in out["buckets"] if b.get("n")))
+        if isinstance(out.get("chambers"), list) and "lot" in out:
+            L.append(f"Lot {out['lot']}: 장착 챔버 {out.get('n', len(out['chambers']))}개 — " +
+                     ", ".join(str(c.get("chamber_id")) for c in out["chambers"][:4]))
+        sig = out.get("signals")
+        if isinstance(sig, dict) and sig:
+            L.append("신호: " + ", ".join(f"{k}={_fv(v)}" for k, v in list(sig.items())[:5]))
+        if out.get("unavailable"):
+            L.append("확인 불가: " + ", ".join(str(x) for x in out["unavailable"][:4]))
+        if out.get("note") and "n_cases" not in out:
+            L.append(str(out["note"])[:90])
+        if out.get("error"):
+            L.append(f"오류: {str(out['error'])[:90]}")
+    if not L and st:
+        L.append(f"status={st}")
+    return L[:8]
 
 
 def compare_outputs(agent_id, a: dict | None, b: dict | None) -> tuple[bool, str]:

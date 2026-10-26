@@ -14,7 +14,7 @@ from datetime import datetime
 
 
 class EventBus:
-    def __init__(self, maxlen: int = 6000):
+    def __init__(self, maxlen: int = 16000):
         self._seq = itertools.count(1)
         self._buf: deque = deque(maxlen=maxlen)
         self._subs: list[queue.Queue] = []

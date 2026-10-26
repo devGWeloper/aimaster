@@ -36,7 +36,7 @@ aimaster/
 │  ├─ ops.py      #   요청 실행기 + 배경 운영 시뮬레이터(가상 엔지니어)
 │  └─ story.py    #   Autopilot 타임라인 (SC-006 → SC-009, 챕터 체크포인트)
 ├─ eval/          # 루프 밖 고정: policy.json(예산·임계값), harness(테스트·후보 평가), testcases(오라클), kpi
-├─ ui/            # 운영 UI: FastAPI + SSE 서버, static/ (빌드 없는 ES 모듈, 오프라인 폰트) — 기본 화면 「흐름」(flow.js): 3중 루프 트랙·CodeAct·Jev·Agent 계보
+├─ ui/            # 운영 UI: FastAPI + SSE 서버, static/ (빌드 없는 ES 모듈, 오프라인 폰트) — 기본 화면 「무대」(board.js = stage 루프 트랙 + graph 편성 + evolve 진화 사건), 「대화」(live.js = 채팅 + graph + trace), 「Fab·업무」(biz.js)
 ├─ config/        # llm.example.json(사내 LLM API), jev.example.json — 실제 llm.json·jev.json 은 git 제외
 ├─ runtime/       # 실행 상태(agentstore.db·legacy_live.db·checkpoints) — git 제외
 └─ tests/         # python -m unittest discover tests
@@ -53,7 +53,7 @@ aimaster/
 | 시나리오 | `docs/01_AutoQual_Self-Evolving_Agent_시나리오.md` | 사용자·운영 시나리오 |
 | 설계 양식 | `docs/format.md` | 설계서 템플릿 |
 | 상세 설계 및 개발 환경 구축 | `docs/01_AutoQual_Self-Evolving_Agent_상세설계_및_개발환경구축.md` | Agent 페르소나, LangGraph 워크플로우·상태, 도구 명세, 메모리 전략, 기술 스택 (구 설계서) |
-| PoC 모듈 구현 | `docs/01_AutoQual_Self-Evolving_Agent_PoC_모듈구현.md` | 핵심 구현(워크플로우·도구·메모리·CodeAct·3중 루프·Self-Evolving·Jev·흐름 UI), 문제 해결·리서치, 동작 검증(SC-001~003 실행 결과)·KPI 실측 |
+| PoC 모듈 구현 | `docs/01_AutoQual_Self-Evolving_Agent_PoC_모듈구현.md` | 핵심 구현(워크플로우·도구·메모리·CodeAct·3중 루프·Self-Evolving·Jev·무대 UI), 문제 해결·리서치, 동작 검증(SC-001~003 실행 결과)·KPI 실측 |
 | 테스트 및 고도화 | `docs/01_AutoQual_Self-Evolving_Agent_테스트_및_고도화.md` | 작성 예정 (양식은 사용자 제공) |
 | E2E 서비스 개발 | `docs/01_AutoQual_Self-Evolving_Agent_E2E_서비스개발.md` | 작성 예정 (양식은 사용자 제공) |
 
@@ -100,7 +100,7 @@ aimaster/
 - [x] CodeAct 런타임·샌드박스 / Agent Registry
 - [x] Super Agent + 메인 Agent 3종 (L1 Task Loop, LangGraph)
 - [x] Heal·Grow (L2) → Evolve·이력 리플레이 (L3), 운영 진화(판단·구조·편성)·롤백·폐기
-- [x] 운영 UI (Autopilot 타임라인 SC-006 → SC-009) + 흐름 화면(Loop Engineering·CodeAct·Self-Evolving 시각화)
+- [x] 운영 UI (Autopilot 타임라인 SC-006 → SC-009) + 무대(루프 트랙 · 편성 그래프 · Self-Evolving 사건) · 대화(채팅 · 동적 편성 맵 · 트레이스) · Fab·업무(AutoQual 단계)
 - [x] 시나리오 개정 반영: SC-002 스키마 탐색 기반 엣지 케이스 테스트, SC-003 로그 슬라이싱 진단
 - [x] PoC 모듈 구현 문서
 - [x] KPI 측정 — `eval/kpi.py`, 운영 UI KPI 화면

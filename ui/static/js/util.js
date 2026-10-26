@@ -63,6 +63,42 @@ export const AGENT_KO = {
 
 export const STATUS_KO = { active: '운영', probation: '시험 운영', deprecated: '폐기 유예', retired: '폐기', candidate: '후보' };
 
+// 루프 밖 행위자 (Agent가 아닌 구성요소) 표시명
+export const ACTOR_KO = { super_agent: 'Super Agent', healer: 'Healer', factory: 'Agent Factory', evolver: 'Evolver', jev: 'Jev', sandbox: 'Sandbox',
+  judge: 'judge_qual', human: '사람(운영자)', fab: 'Mock Fab', memory: '경험 메모리', harness: '평가 하네스', registry: 'Registry', world: '장애 주입기' };
+
+export const PM_KO = { WET_CLEAN: 'Wet Clean', RF_GEN_REPLACE: 'RF Generator 교체', SHOWERHEAD_REPLACE: 'Showerhead 교체', ESC_REPLACE: 'ESC 교체',
+  TARGET_REPLACE: 'Target 교체', PUMP_PM: 'Pump PM', QUARTERLY_PM: '정기 PM(분기)', ALARM_RECOVERY: '알람 Down 복구' };
+
+export const ITEM_KO = { PARTICLE: 'Particle', ER: 'Etch Rate', ER_UNIF: 'ER Uniformity', DR: 'Dep. Rate', THK_UNIF: 'THK Uniformity', RS_UNIF: 'Rs Uniformity',
+  BASE_PRESSURE: 'Base Pressure', LEAK_RATE: 'Leak Rate' };
+
+export const RTYPE_KO = { autoqual: 'PM 후 AutoQual', judge: 'Qual 판정', remeasure: '재측정 판정', history: '이력 분석', analysis: '신규 분석',
+  trend: 'PM 사이클 추이', lot_trace: '부품 Lot 추적', reanswer: '추가 응답(복구 후)', rework: '재작업 계획', state: '장비 상태 변경', escalate: '에스컬레이션' };
+
+export function fmtVal(v) {
+  if (v == null) return '-';
+  if (typeof v === 'number') {
+    if (v !== 0 && Math.abs(v) < 0.001) return v.toExponential(2);
+    return Math.abs(v) >= 1000 ? v.toLocaleString('ko-KR', { maximumFractionDigits: 1 }) : String(Math.round(v * 1000) / 1000);
+  }
+  return String(v);
+}
+
+export function fmtSpec(sp) {
+  if (!sp) return '';
+  const lo = sp.lower, up = sp.upper;
+  if (lo != null && up != null) return `${fmtVal(lo)} ~ ${fmtVal(up)}`;
+  if (up != null) return `≤ ${fmtVal(up)}`;
+  if (lo != null) return `≥ ${fmtVal(lo)}`;
+  return '-';
+}
+
+export function unitKo(u) { return String(u || '').replace('A/min', 'Å/min'); }
+
+export function hhmm(vts) { return vdate(vts).t; }
+export function mmdd(vts) { const d = vdate(vts).d; return d ? d.slice(5) : ''; }
+
 export const NODE_KO = {
   parse_request: '요청 해석', retrieve_memory: '경험 메모리 조회', jev_route: 'Jev 편성', grow_subgraph: 'Grow 진입', plan_codeact: '실행 계획(CodeAct)',
   execute_sandbox: '샌드박스 실행', observe: '관찰·사후 검증', mark_unavailable: '확인 불가 표시', synthesize: '결과 종합', respond: '응답',

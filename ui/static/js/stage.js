@@ -1,16 +1,16 @@
-// 흐름 화면 — 질문 하나가 Loop Engineering(L1·L2·L3) → CodeAct → Self-Evolving으로 이어지는 과정을 한 화면에 보여준다
-//   자막(지금 무슨 일이) · 3중 루프 트랙(토큰이 실제 노드를 따라 이동) · CodeAct(작성 코드 → 샌드박스 검사 → 실행) · Jev 판단 · Agent 계보
-import { $, h, s, api, vdate, AGENT_KO, HEAD_KO, short, diffLines, highlight, debounce } from './util.js';
+// 무대(stage) — 상황판의 라이브 영역: 자막(지금 무슨 일이) · 3중 루프 트랙(토큰이 실제 노드를 따라 이동) · Self-Evolving 계보
+//   이벤트 → 트랙 위치 매핑(NODE_SLOT) · 노드별 한 문장 자막(SAY) 은 트레이스(trace.js)·편성 그래프(graph.js)와 공유한다
+import { $, h, s, api, AGENT_KO, short, debounce } from './util.js';
 
 let A = null;
-const spd = () => (A.state ? Number(A.state.speed) : 1);
+const spd = () => (A && A.state ? Number(A.state.speed) : 1);
 const ms = (base) => { const v = spd(); return v ? base / Math.max(0.5, v) : 0; };
 
 /* ══════════════════════════════════════════════════════════
    루프 트랙 정의 — 트랙 윗변 = 진행 방향, 아랫변 = 되돌아가는 길(재시도·다음 주기)
    ══════════════════════════════════════════════════════════ */
-const VB = { w: 1000, h: 452 };
-const LANES = {
+export const VB = { w: 1000, h: 452 };
+export const LANES = {
   L3: { c: 'l3', x0: 30, x1: 970, top: 58, h: 50, name: 'L3 EVOLVE', sub: '쌓인 경험으로 Agent 자체를 바꾸는 바깥 루프',
     back: '↺ 다음 진화 주기 (분기·야간) — 기각안은 아카이브에서 재출발',
     slots: [['metrics', '지표 수집'], ['jev', 'Jev 진화 판단', 'jev'], ['mutate', '변이 후보', 'ca'], ['eval', '하네스 평가', 'det'],
@@ -26,7 +26,7 @@ const LANES = {
     back: '↺ 테스트 실패 → 블랙리스트 후 재패치 (예산 5회·15분)',
     slots: [['cls', '오류 분류', 'jev'], ['diag', '원인 진단', 'ca'], ['patch', '패치 작성', 'ca'], ['test', '회귀 테스트', 'det'], ['reg', '버전 반영']] },
 };
-const LANE_LABEL = { L1: 'L1 TASK', HEAL: 'L2 HEAL', GROW: 'L2 GROW', L3: 'L3 EVOLVE' };
+export const LANE_LABEL = { L1: 'L1 TASK', HEAL: 'L2 HEAL', GROW: 'L2 GROW', L3: 'L3 EVOLVE' };
 
 for (const L of Object.values(LANES)) {
   const r = L.h / 2;
@@ -55,7 +55,7 @@ function vcurve(x1, y1, x2, y2) {
 }
 
 // 이벤트 노드 → 트랙 위치 ('@back' = 되돌아가는 길, '@stop' = 루프 중단)
-const NODE_SLOT = {
+export const NODE_SLOT = {
   L1: { parse_request: 'parse', retrieve_memory: 'mem', jev_route: 'route', grow_subgraph: 'route', plan_codeact: 'plan', rework_plan: 'plan',
     execute_sandbox: 'exec', observe: 'obs', mark_unavailable: 'obs', synthesize: 'resp', respond: 'resp', await_qual_result: 'resp',
     replay_measure: 'resp', deterministic_judge: 'judge', compare_actual: 'judge', approval_gate: 'gate', apply_state_change: 'gate', log_experience: '@back' },
@@ -70,7 +70,7 @@ const NODE_SLOT = {
 };
 
 // 자막 — 노드마다 "지금 Agent가 무엇을 하는지" 한 문장
-const SAY = {
+export const SAY = {
   parse_request: 'Super Agent가 질문에서 장비·챔버·PM 종류를 뽑아냅니다',
   retrieve_memory: '과거 경험(교훈·유사 사례·편성 템플릿)을 꺼내 옵니다',
   jev_route: 'Jev가 어떤 Agent를 부를지 확률로 판단합니다',
@@ -127,35 +127,27 @@ const SAY = {
   auto_rollback: 'Shadow 불일치 — 관련 Agent를 원자적으로 자동 롤백합니다',
 };
 
-const BAD = {
+export const BAD = {
   observe: /확인 불가/, mark_unavailable: /./, run_regression: /재현 테스트 실패|— 실패/, run_tests: /실패/, check_blacklist: /일치/,
   blacklist_patch: /./, escalate_operator: /./, abort_with_reason: /./, auto_rollback: /./, evaluate_harness: /— 실패/,
 };
 
-const ACTOR = { super_agent: ['Super Agent', 'l1'], healer: ['Healer', 'l2'], factory: ['Agent Factory', 'l2'], evolver: ['Evolver', 'l3'] };
-const PIPE = {
-  plan: ['LLM 코드 작성', 'AST 검사', 'import 검사', '샌드박스 실행', '사후 검증'],
-  diag: ['진단 코드 작성', 'AST 정적 검사', '로그 슬라이싱 실행', '원인 도출'],
-  patch: ['패치 작성', 'AST·블랙리스트', '회귀 테스트', '버전 반영'],
-  explore: ['탐색 코드 작성', 'AST 정적 검사', '읽기 전용 실행', '스키마 파악'],
-  gen: ['Agent 코드 생성', 'AST 정적 검사', '테스트', 'probation 등록'],
-  evolve: ['변이 생성', '하네스 평가', '선택·승인', 'Registry 반영'],
-  rollback: ['Shadow 불일치', '원자적 롤백', 'Registry 반영'],
-};
-const VKIND = { heal: 'Heal 패치', grow: 'Grow 생성', evolve: 'Evolve 채택', compose: '구성 변경(MAJOR)', rollback: '자동 롤백', promote: '정식 승격',
+export const VKIND = { heal: 'Heal 패치', grow: 'Grow 생성', evolve: 'Evolve 채택', compose: '구성 변경(MAJOR)', rollback: '자동 롤백', promote: '정식 승격',
   restore: '아카이브 복원', baseline: '초기 구축', deprecate: '폐기 유예', retire: '폐기 확정', grace_restart: '유예 재시작', defect: '결함 판정' };
+
+export const laneOf = (ev) => (ev.loop === 'L1' ? 'L1' : ev.loop === 'L3' ? 'L3' : ev.loop === 'L2' ? (ev.sub === 'grow' || ev.grow_id ? 'GROW' : 'HEAL') : null);
+export const runOf = (ev) => ev.heal_id || ev.grow_id || ev.run_id || ev.request_id || null;
 
 /* ══════════════════════════════════════════════════════════
    루프 맵
    ══════════════════════════════════════════════════════════ */
-const Loops = {
+export const Loops = {
   svg: null, g: {}, st: {}, links: {},
   build(host) {
     const svg = s('svg', { viewBox: `0 0 ${VB.w} ${VB.h}`, class: 'fl-svg', role: 'img', 'aria-label': '3중 루프: L3 Evolve, L1 Task, L2 Grow·Heal' });
     svg.append(s('defs', {},
       ...['l1', 'l2', 'l3'].map((c) => s('marker', { id: `fa-${c}`, viewBox: '0 0 8 8', refX: 6, refY: 4, markerWidth: 6, markerHeight: 6, orient: 'auto' },
         s('path', { d: 'M0 0L8 4L0 8z', class: `mk ${c}` })))));
-    // 루프 사이 연결
     const lk = s('g', { class: 'fl-links' });
     for (const [id, L] of Object.entries(LINKS)) {
       const g = s('g', { class: `lk ${L.c}` });
@@ -188,7 +180,7 @@ const Loops = {
     const back = s('g', { class: 'back' }, s('rect', { x: bx - bw / 2, y: L.yB - 9, width: bw, height: 18, rx: 9 }), s('text', { x: bx, y: L.yB + 3.6, 'text-anchor': 'middle' }, L.back));
     const tok = s('g', { class: 'tok' }, s('circle', { r: 11, class: 'tok-halo' }), s('circle', { r: 6.5, class: 'tok-c' }), s('circle', { r: 2.4, class: 'tok-i' }));
     tok.style.opacity = 0;
-    g.append(back, status, tok);      // 토큰은 노드 아래 — 이동 중에만 보이고, 멈추면 노드 하이라이트가 위치를 보여준다
+    g.append(back, status, tok);
     const nodes = {};
     for (const [k, p] of Object.entries(L.pos)) {
       const n = s('g', { class: `nd ${p.kind || ''}`, transform: `translate(${p.x - L.pw / 2},${L.yT - 16})` },
@@ -207,7 +199,6 @@ const Loops = {
     this.st[key] = { cur: null, len: 0, run: null, visited: new Set(), anim: null, idle: null };
     return g;
   },
-  // 이벤트 반영: lane의 slot으로 토큰을 움직이고 노드 상태를 바꾼다
   go(key, slot, ev, { bad = false, detail = null, run = null } = {}) {
     const L = LANES[key], G = this.g[key], S = this.st[key];
     if (run && run !== S.run) {
@@ -248,7 +239,7 @@ const Loops = {
     G.tok.style.opacity = 1;
     let from = S.len;
     let to = target;
-    if (to < from - 0.5) to += L.total;              // 뒤로 가는 길 = 트랙을 한 바퀴 돌아 되돌아온다
+    if (to < from - 0.5) to += L.total;
     const d = ms(Math.min(1500, 380 + (to - from) * 0.9));
     const place = (len) => { const pt = G.track.getPointAtLength(((len % L.total) + L.total) % L.total); G.tok.setAttribute('transform', `translate(${pt.x},${pt.y})`); };
     if (instant || !d || to === from) { S.len = target; place(target); return; }
@@ -319,36 +310,46 @@ const Loops = {
 };
 
 // 대략적인 글자 폭 (SVG가 숨겨져 있어도 배치할 수 있게)
-function textW(t, size, bold) {
+export function textW(t, size, bold) {
   let w = 0;
   for (const ch of String(t)) w += /[ㄱ-힝]/.test(ch) ? size * 0.92 : /[A-Z0-9]/.test(ch) ? size * 0.64 : size * 0.52;
   return w * (bold ? 1.06 : 1);
 }
 
 /* ══════════════════════════════════════════════════════════
-   자막 — 시나리오 · 질문 · 지금
+   자막 — 시나리오 · 질문 · 지금 · Agentic 지표
    ══════════════════════════════════════════════════════════ */
-const Cap = {
-  trail: [], el: {},
+const COUNTERS = [['code', 'CodeAct 실행', 'l1'], ['calls', 'Agent 호출', 'l1'], ['jev', 'Jev 판단', 'jev'], ['heal', 'Self-Heal', 'l2'],
+  ['grow', 'Agent 생성', 'l2'], ['evolve', '진화 반영', 'l3'], ['human', '사람 승인', 'gate'], ['unapproved', '무승인 변경', 'ok']];
+export const Cap = {
+  trail: [], el: {}, cnt: {},
   build(host) {
     const e = this.el;
     e.ch = h('div', { class: 'cap-t' }, 'Autopilot 대기');
     e.chk = h('div', { class: 'cap-k' }, '시나리오');
     e.story = h('div', { class: 'cap-s' }, '▶ 상단 Autopilot을 누르면 Agent가 시나리오를 스스로 수행합니다.');
-    e.q = h('div', { class: 'cap-q' }, '아직 질문이 없습니다 — 오른쪽 위 입력창에서 직접 질문해 볼 수 있습니다.');
-    e.qk = h('div', { class: 'cap-k' }, '질문');
+    e.q = h('div', { class: 'cap-q' }, '아직 요청이 없습니다 — 「대화」 화면에서 엔지니어처럼 직접 요청하거나 Autopilot을 시작하세요.');
+    e.qk = h('div', { class: 'cap-k' }, '요청');
     e.loop = h('span', { class: 'lchip' }, 'READY');
     e.say = h('div', { class: 'cap-say' }, 'Agent가 움직이면 여기 지금 하는 일이 한 문장으로 나옵니다');
     e.det = h('div', { class: 'cap-d' }, '');
     e.trail = h('div', { class: 'fl-trail' });
+    e.counters = h('div', { class: 'cap-cnt' });
+    for (const [k, label, c] of COUNTERS) {
+      const v = h('b', {}, '0');
+      this.cnt[k] = v;
+      e.counters.append(h('span', { class: `cc ${c}`, title: label }, h('i', {}), h('span', {}, label), v));
+    }
     host.append(
       h('div', { class: 'cap-row' },
         h('div', { class: 'cap-c cap-ch' }, e.chk, e.ch, e.story),
         h('div', { class: 'cap-c cap-qq' }, e.qk, e.q),
-        h('div', { class: 'cap-c cap-now' }, h('div', { class: 'cap-k' }, e.loop, h('span', {}, '지금')), e.say, e.det)),
+        h('div', { class: 'cap-c cap-now' }, h('div', { class: 'cap-k' }, e.loop, h('span', {}, '지금 Agent가 하는 일')), e.say, e.det),
+        h('div', { class: 'cap-c cap-ag' }, h('div', { class: 'cap-k' }, 'AGENTIC 지표 (누적)'), e.counters)),
       e.trail);
     this.renderTrail();
   },
+  counts(obj) { for (const [k, v] of Object.entries(obj)) if (this.cnt[k]) this.cnt[k].textContent = Number(v).toLocaleString('ko-KR'); },
   chapter(ev) {
     const m = /^(SC-\d+)\s+(.*)$/.exec(ev.title || '');
     this.el.chk.textContent = `${m ? m[1] : '챕터'} · ${ev.date || ''}`;
@@ -357,7 +358,7 @@ const Cap = {
   },
   story(text) { this.el.story.textContent = text; },
   question(who, text, tag) {
-    this.el.qk.textContent = `질문 · ${who}${tag ? ` · ${tag}` : ''}`;
+    this.el.qk.textContent = `요청 · ${who}${tag ? ` · ${tag}` : ''}`;
     this.el.q.textContent = `“${text}”`;
     this.el.q.classList.remove('flash');
     void this.el.q.offsetWidth;
@@ -384,9 +385,8 @@ const Cap = {
     t.innerHTML = '';
     if (!this.trail.length) {
       t.append(h('span', { class: 'tr-help' }, h('b', {}, '읽는 법'),
-        ' 질문은 가운데 ', h('i', { class: 'l1' }, 'L1 트랙'), '을 따라 처리됩니다. 막히면 아래 ', h('i', { class: 'l2' }, 'L2'),
-        '로 내려가 스스로 코드를 고치거나(Heal) 새 Agent를 만들고(Grow), 위 ', h('i', { class: 'l3' }, 'L3'),
-        '는 쌓인 경험으로 Agent 자체를 진화시킵니다. 트랙 아래쪽은 되돌아가는 길(재시도·다음 주기)입니다.'));
+        '요청은 ', h('i', { class: 'l1' }, 'L1 트랙'), '을 따라 처리됩니다. 막히면 아래 ', h('i', { class: 'l2' }, 'L2'), '로 내려가 스스로 코드를 고치거나(Heal) 새 Agent를 만들고(Grow), 위 ', h('i', { class: 'l3' }, 'L3'),
+        '는 쌓인 경험으로 Agent 자체를 진화시킵니다. 오른쪽 편성 그래프는 누가 불리고 무엇을 가져오는지, 아래 Self-Evolving은 Agent가 자기 자신을 바꾼 사건을 보여줍니다. 요청·응답 전문과 단계별 트레이스는 「대화」, AutoQual 업무 단계와 Fab은 「Fab·업무」 화면에 있습니다.'));
       return;
     }
     const items = this.trail.slice(-16);
@@ -401,179 +401,12 @@ const Cap = {
 };
 
 /* ══════════════════════════════════════════════════════════
-   CodeAct — 작성 코드 · 샌드박스 단계 · 하위 Agent 호출
-   ══════════════════════════════════════════════════════════ */
-const Code = {
-  el: {}, timer: null, kind: null, stages: [],
-  build(host) {
-    const e = this.el;
-    e.actor = h('span', { class: 'actor' }, '—');
-    e.purpose = h('span', { class: 'purpose' }, 'Agent가 코드를 쓰면 여기에 실시간으로 나타납니다');
-    e.model = h('span', { class: 'model' }, '');
-    e.code = h('pre', { class: 'ca2-code' });
-    e.pipe = h('div', { class: 'ca2-pipe' });
-    e.calls = h('div', { class: 'ca2-calls' });
-    host.append(
-      h('header', { class: 'fp-h' }, h('b', { class: 'kw l1' }, 'CODEACT'), h('span', { class: 'fp-d' }, 'Agent는 행동을 Python 코드로 써서 샌드박스에서 실행합니다')),
-      h('div', { class: 'ca2-who' }, e.actor, e.purpose, e.model), e.code, e.pipe, e.calls);
-    e.code.append(h('div', { class: 'ca2-empty' },
-      h('div', {}, '이 패널에 나오는 코드는 모두 Agent가 직접 작성한 것입니다.'),
-      h('div', {}, 'Super Agent의 실행 계획 · Healer의 진단/패치 · Factory의 새 Agent · Evolver의 진화 diff')));
-    this.setPipe('plan', -1);
-  },
-  show(ev) {
-    const e = this.el;
-    const kind = ev.agent === 'super_agent' ? 'plan' : ev.agent === 'healer' ? (ev.diff ? 'patch' : 'diag')
-      : ev.agent === 'factory' ? (/스키마/.test(ev.purpose || '') ? 'explore' : 'gen') : 'plan';
-    const [nm, c] = ACTOR[ev.agent] || [AGENT_KO[ev.agent] || ev.agent, 'l1'];
-    this.head(nm, c, ev.purpose || '', ev.model ? `${ev.model}${ev.source && ev.source !== 'online' ? ' · 오프라인 Playbook' : ''}` : (ev.template_id ? `편성 템플릿 ${ev.template_id}` : ''));
-    if (kind === 'plan') this.resetCalls();
-    this.setPipe(kind, 0);
-    this.type(ev.code || '', !!ev.diff, ev.backlog, () => {
-      this.mark(0, 'ok');
-      this.mark(1, 'run');
-      setTimeout(() => {
-        this.mark(1, 'ok');
-        if (kind === 'plan') { this.mark(2, 'ok'); this.mark(3, 'run'); } else this.mark(2, 'run');
-      }, ev.backlog ? 0 : ms(320));
-    });
-  },
-  evolve(ev) {
-    const rb = ev.kind === 'rollback';
-    this.head('Evolver', rb ? 'bad' : 'l3', `${AGENT_KO[ev.agent_id] || ev.agent_id} ${ev.from_version || '—'} → ${ev.to_version} · ${VKIND[ev.kind] || ev.kind}${ev.ref ? ` ${ev.ref}` : ''}`,
-      `+${ev.diff_add || 0} / −${ev.diff_del || 0} lines`);
-    this.setPipe(rb ? 'rollback' : 'evolve', -1);
-    this.type(ev.diff, true, ev.backlog);
-    this.stages.forEach((_, i) => setTimeout(() => this.mark(i, rb && i === 0 ? 'bad' : 'ok'), ev.backlog ? 0 : ms(160 * (i + 1))));
-  },
-  head(nm, c, purpose, model) {
-    const e = this.el;
-    e.actor.textContent = nm;
-    e.actor.className = `actor ${c}`;
-    e.purpose.textContent = purpose;
-    e.model.textContent = model || '';
-  },
-  type(code, diff, instant, done) {
-    const pre = this.el.code;
-    clearInterval(this.timer);
-    pre.innerHTML = '';
-    if (diff) {
-      pre.append(...diffLines(code));
-      pre.scrollTop = 0;
-      done?.();
-      return;
-    }
-    if (instant || !spd()) { pre.innerHTML = highlight(code); done?.(); return; }
-    let i = 0;
-    const stepN = Math.max(6, Math.ceil(code.length / 70));
-    this.timer = setInterval(() => {
-      i = Math.min(code.length, i + stepN);
-      pre.innerHTML = highlight(code.slice(0, i)) + (i < code.length ? '<span class="caret"></span>' : '');
-      pre.scrollTop = pre.scrollHeight;
-      if (i >= code.length) { clearInterval(this.timer); done?.(); }
-    }, Math.max(10, 22 / Math.max(0.5, spd())));
-  },
-  setPipe(kind, cur) {
-    this.kind = kind;
-    const p = this.el.pipe;
-    p.innerHTML = '';
-    this.stages = PIPE[kind].map((t, i) => {
-      if (i) p.append(h('span', { class: 'pp-ar' }, '→'));
-      const st = h('span', { class: `pp ${i === cur ? 'run' : ''}` }, h('i', {}, String(i + 1)), t);
-      p.append(st);
-      return st;
-    });
-  },
-  label(i, text) { const st = this.stages[i]; if (st) st.lastChild.textContent = text; },
-  mark(i, state) {
-    const st = this.stages[i];
-    if (!st) return;
-    st.classList.remove('run', 'ok', 'bad');
-    st.classList.add(state);
-  },
-  node(ev) {
-    const d = ev.detail || '';
-    const bad = BAD[ev.node]?.test(d);
-    const K = this.kind;
-    if (K === 'plan' && ev.node === 'execute_sandbox') { this.mark(3, (ev.runs || []).some((r) => !r.ok) ? 'bad' : 'ok'); this.mark(4, 'run'); }
-    if (K === 'plan' && ev.node === 'observe') this.mark(4, bad ? 'bad' : 'ok');
-    if (K === 'diag' && ev.node === 'diagnose_codeact') { this.mark(2, 'ok'); this.mark(3, 'ok'); }
-    if (K === 'patch' && ev.node === 'check_blacklist') { this.mark(1, bad ? 'bad' : 'ok'); if (!bad) this.mark(2, 'run'); }
-    if (K === 'patch' && ev.node === 'run_regression' && /회귀 \d+\/\d+/.test(d)) { this.label(2, `회귀 ${/회귀 (\d+\/\d+)/.exec(d)[1]}`); this.mark(2, bad ? 'bad' : 'ok'); if (!bad) this.mark(3, 'run'); }
-    if (K === 'patch' && ev.node === 'register_version') this.mark(3, 'ok');
-    if (K === 'explore' && ev.node === 'explore_schema') { this.mark(2, 'ok'); this.mark(3, 'ok'); }
-    if (K === 'gen' && ev.node === 'run_tests') { const m = /테스트 (\d+\/\d+)/.exec(d); if (m) this.label(2, `테스트 ${m[1]}`); this.mark(2, bad ? 'bad' : 'ok'); if (!bad) this.mark(3, 'run'); }
-    if (K === 'gen' && ev.node === 'register_probation') this.mark(3, 'ok');
-  },
-  tests(ev) {
-    if (!['patch', 'gen'].includes(this.kind)) return;
-    const st = this.stages[2];
-    if (!st) return;
-    st.lastChild.textContent = ev.n ? `회귀 테스트 ${ev.n}건…` : `테스트: ${ev.label || ''}`;
-    if (ev.ok === false) st.classList.add('bad');
-  },
-  resetCalls() {
-    this.el.calls.innerHTML = '';
-    this.calls = new Map();
-  },
-  call(ev, end) {
-    if (!this.calls) this.resetCalls();
-    const c = this.el.calls;
-    if (!c.childElementCount) c.append(h('span', { class: 'cl-h' }, 'Super Agent가 코드로 호출한 Agent'));
-    let chip = this.calls.get(ev.agent_id);
-    if (!chip) {
-      chip = h('span', { class: `cl ${ev.indirect ? 'ind' : ''}` }, ev.indirect ? '↳ ' : '', AGENT_KO[ev.agent_id] || short(ev.agent_id), h('em', {}, ev.version || ''));
-      this.calls.set(ev.agent_id, chip);
-      c.append(chip);
-    }
-    chip.classList.remove('run', 'ok', 'bad');
-    chip.classList.add(end ? (ev.ok ? 'ok' : 'bad') : 'run');
-    if (end && !ev.ok) chip.title = String(ev.error?.message || ev.error || '실패');
-  },
-};
-
-/* ══════════════════════════════════════════════════════════
-   Jev — 반복 분기 판단 (보정 확률)
-   ══════════════════════════════════════════════════════════ */
-const Jev = {
-  el: {}, n: 0, rid: null,
-  build(host) {
-    const e = this.el;
-    e.cnt = h('span', { class: 'fp-r' }, '');
-    e.q = h('div', { class: 'jv-q' }, h('span', { class: 'muted' }, '루프 안의 반복 분기는 LLM 대신 Jev가 보정 확률로 판단합니다'));
-    e.bars = h('div', { class: 'jv-bars' });
-    host.append(h('header', { class: 'fp-h' }, h('b', { class: 'kw jev' }, 'JEV 판단'), h('span', { class: 'fp-d' }, '보정 확률 → 임계값 이상이면 자율 진행, 아니면 재검토'), e.cnt), e.q, e.bars);
-  },
-  show(ev) {
-    const e = this.el;
-    const rid = ev.request_id || ev.heal_id || ev.run_id || null;
-    if (rid !== this.rid) { this.rid = rid; this.n = 0; }
-    this.n += 1;
-    e.cnt.textContent = rid ? `${rid} · ${this.n}번째 판단` : '';
-    const sel = Array.isArray(ev.answer) ? ev.answer : [ev.answer];
-    const ans = sel.map((x) => AGENT_KO[x] || x).join(', ');
-    e.q.innerHTML = '';
-    e.q.append(h('span', {}, HEAD_KO[ev.head] || ev.question || ev.head), h('span', { class: 'jv-ar' }, '→'), h('b', {}, ans || '-'));
-    if (ev.threshold) e.q.append(h('span', { class: 'muted' }, ` 자율 ≥${ev.threshold}`));
-    e.bars.innerHTML = '';
-    const esc = (ev.escalated || []).map((x) => x.agent_id);
-    const entries = Object.entries(ev.probs || {}).sort((a, b) => b[1] - a[1]).slice(0, 4);
-    for (const [k, p] of entries) {
-      const c = sel.includes(k) ? 'sel' : esc.includes(k) ? 'esc' : 'off';
-      const bar = h('i', { style: { width: ev.backlog ? `${Math.round(p * 100)}%` : '0%' } });
-      e.bars.append(h('div', { class: `jv ${c}` }, h('span', { class: 'jv-k' }, AGENT_KO[k] || k), h('span', { class: 'jv-bar' }, bar), h('span', { class: 'jv-v' }, p.toFixed(2))));
-      if (!ev.backlog) requestAnimationFrame(() => requestAnimationFrame(() => { bar.style.width = `${Math.round(p * 100)}%`; }));
-    }
-  },
-};
-
-/* ══════════════════════════════════════════════════════════
    Self-Evolving — Agent Genome 계보
    ══════════════════════════════════════════════════════════ */
 const MAIN_AGENTS = ['super_agent', 'spec_agent', 'log_agent', 'legacy_agent'];
 const EV_C = { baseline: 'base', heal: 'l2', grow: 'l2', evolve: 'l3', compose: 'l3', rollback: 'bad', promote: 'ok', restore: 'l1',
   deprecate: 'warn', retire: 'gone', grace_restart: 'warn', defect: 'bad' };
-const Evo = {
+export const Evo = {
   el: {}, rows: [], maxId: null, sig: '',
   build(host) {
     const e = this.el;
@@ -596,7 +429,6 @@ const Evo = {
     if (!rows.length || !st) return;
     const chapters = st.story?.chapters || [];
     const reg = new Map((st.registry?.agents || []).map((a) => [a.agent_id, a]));
-    // 열 = 같은 ref(진화 run·Heal·Grow 등)로 묶인 사건
     const cols = [];
     let prevKey = null;
     for (const r of rows) {
@@ -606,7 +438,6 @@ const Evo = {
     }
     const base = chapters[0]?.date || '2026-07-01';
     for (const c of cols) c.ch = chapterOf(c, chapters, base);
-    // 행 = Agent (메인 → 생성된 Agent → 공용 스킬)
     const first = new Map();
     rows.forEach((r) => { if (!first.has(r.agent_id)) first.set(r.agent_id, r.id); });
     const ids = [...first.keys()];
@@ -614,12 +445,11 @@ const Evo = {
     const order = [...MAIN_AGENTS.filter((x) => first.has(x)),
       ...ids.filter((x) => !MAIN_AGENTS.includes(x) && kindOf(x) === 'agent').sort((a, b) => first.get(a) - first.get(b)),
       ...ids.filter((x) => kindOf(x) === 'skill').sort((a, b) => first.get(a) - first.get(b))];
-    const RH = 15, TOP = 20;
+    const RH = 20, TOP = 20;
     const avail = Math.max(300, this.el.scroll.clientWidth - 12);
-    const CW = Math.max(42, Math.min(72, avail / cols.length));
+    const CW = Math.max(48, Math.min(84, avail / cols.length));
     const W = Math.max(avail, cols.length * CW + 20), H = TOP + order.length * RH + 4;
     const svg = s('svg', { width: W, height: H, class: 'evo-svg' });
-    // 챕터 띠
     let i0 = 0;
     for (let i = 1; i <= cols.length; i += 1) {
       if (i === cols.length || cols[i].ch !== cols[i0].ch) {
@@ -647,9 +477,9 @@ const Evo = {
         const c = EV_C[pick.kind] || 'base';
         let g;
         if (pick.from_version !== pick.to_version) {
-          const w = textW(pick.to_version, 10) + 10;
+          const w = textW(pick.to_version, 11) + 12;
           g = s('g', { class: `vp ${c} ${fresh ? 'new' : ''}`, transform: `translate(${x},${y})` }, s('title', {}, tip),
-            s('rect', { x: -w / 2, y: -6.5, width: w, height: 13, rx: 6.5 }), s('text', { y: 3.6, 'text-anchor': 'middle' }, pick.to_version));
+            s('rect', { x: -w / 2, y: -8, width: w, height: 16, rx: 8 }), s('text', { y: 4, 'text-anchor': 'middle' }, pick.to_version));
         } else if (pick.kind === 'retire') {
           g = s('g', { class: `vm gone ${fresh ? 'new' : ''}`, transform: `translate(${x},${y})` }, s('title', {}, tip), s('path', { d: 'M-4 -4L4 4M4 -4L-4 4' }));
         } else {
@@ -661,7 +491,6 @@ const Evo = {
     this.el.scroll.innerHTML = '';
     this.el.scroll.append(svg);
     this.el.scroll.scrollLeft = W;
-    // 이름
     const nm = this.el.names;
     nm.innerHTML = '';
     nm.style.paddingTop = `${TOP}px`;
@@ -670,7 +499,6 @@ const Evo = {
       nm.append(h('div', { class: `en ${a?.status || ''} ${a?.kind === 'skill' ? 'skill' : ''}`, title: `${id} · ${a?.status || ''}` },
         h('span', {}, AGENT_KO[id] || short(id)), h('em', {}, a?.active_version || '')));
     }
-    // 카운터
     const n = (k) => rows.filter((r) => k.includes(r.kind) && (r.from_version !== r.to_version || ['retire'].includes(r.kind))).length;
     this.el.cnt.innerHTML = '';
     this.el.cnt.append(...[['l2', 'Grow', n(['grow'])], ['l2', 'Heal', n(['heal'])], ['l3', 'Evolve', n(['evolve', 'compose'])],
@@ -702,11 +530,8 @@ function bandLabel(ch, w) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   이벤트 → 화면
+   이벤트 → 무대 (루프 트랙 · 자막)
    ══════════════════════════════════════════════════════════ */
-const laneOf = (ev) => (ev.loop === 'L1' ? 'L1' : ev.loop === 'L3' ? 'L3' : ev.loop === 'L2' ? (ev.sub === 'grow' || ev.grow_id ? 'GROW' : 'HEAL') : null);
-const runOf = (ev) => ev.request_id || ev.heal_id || ev.grow_id || ev.run_id || null;
-
 function onNode(ev) {
   const lane = laneOf(ev);
   if (!lane) return;
@@ -733,158 +558,99 @@ function onNode(ev) {
   const label = slot === '@back' ? (lane === 'L1' ? '경험 기록' : '재시도') : slot === '@stop' ? '중단' : LANES[lane].pos[slot].label;
   Cap.now(lane, SAY[key] || LANES[lane].pos[slot]?.label || ev.node, ev.detail, bad || slot === '@stop' ? 'bad' : '');
   Cap.step(lane, label, bad || slot === '@stop');
-  Code.node(ev);
 }
 
-function onEvent(ev) {
-  switch (ev.type) {
-    case 'chapter':
-      if (ev.phase === 'start') { Cap.chapter(ev); if (!ev.backlog) Loops.reset(); }
-      break;
-    case 'story': Cap.story(ev.text); break;
-    case 'request':
-      Cap.question(ev.user || '엔지니어', ev.text, ev.request_id);
-      Code.resetCalls();
-      Loops.go('L1', 'q', ev, { run: ev.request_id, detail: ev.text });
-      Loops.status('L1', `${ev.request_id} · 진행 중`);
-      Cap.now('L1', '질문이 들어왔습니다 — Super Agent가 처리를 시작합니다', ev.request_id);
-      Cap.step('L1', '질문', false);
-      break;
-    case 'replay_case':
-      Cap.question('리플레이', ev.text, `${ev.quarter} · replay_clock ${String(ev.replay_clock || '').slice(0, 10)}`);
-      Loops.go('L1', 'q', ev, { run: `RP-${ev.qh_seq}`, detail: `과거 이력 재생 — ${ev.chamber_id} ${ev.pm_type}` });
-      Loops.status('L1', `리플레이 QH ${ev.qh_seq} · ${ev.quarter}`);
-      Cap.step('L1', '질문(과거)', false);
-      break;
-    case 'node': onNode(ev); break;
-    case 'response':
-      if (ev.request_id) Loops.status('L1', `${ev.request_id} · 응답`);
-      break;
-    case 'jev':
-      Jev.show(ev);
-      break;
-    case 'code': Code.show(ev); break;
-    case 'agent_start': if (Code.kind === 'plan') Code.call(ev, false); break;
-    case 'agent_end': if (Code.kind === 'plan') Code.call(ev, true); break;
-    case 'tests': Code.tests(ev); break;
-    case 'budget': {
-      const lane = ev.heal_id ? 'HEAL' : 'GROW';
-      Loops.status(lane, `${ev.heal_id || ev.grow_id} · 시도 ${ev.attempts}/${ev.max_attempts} · ${ev.minutes}/${ev.max_minutes}분`);
-      break;
-    }
-    case 'version': {
-      if (ev.kind === 'baseline') break;
-      if (['evolve', 'compose', 'rollback', 'promote', 'restore'].includes(ev.kind)) {
-        Loops.go('L3', 'promote', ev, { bad: ev.kind === 'rollback', detail: `${short(ev.agent_id)} ${ev.from_version || '—'} → ${ev.to_version} (${VKIND[ev.kind]})` });
-        if (!ev.backlog) Loops.spark('l3-l1');
-        Cap.now('L3', ev.kind === 'rollback' ? `자동 롤백 — ${AGENT_KO[ev.agent_id] || ev.agent_id}를 이전 버전으로 되돌립니다`
-          : `${AGENT_KO[ev.agent_id] || ev.agent_id}가 새 버전으로 진화했습니다 — 다음 질문부터 이 코드로 동작합니다`,
-        `${ev.agent_id} ${ev.from_version || '—'} → ${ev.to_version} · ${VKIND[ev.kind] || ev.kind}${ev.ref ? ` ${ev.ref}` : ''} · +${ev.diff_add || 0}/−${ev.diff_del || 0}`, ev.kind === 'rollback' ? 'bad' : 'ver');
-        Cap.step('L3', ev.kind === 'rollback' ? '롤백' : `${short(ev.agent_id)} ${ev.to_version}`, ev.kind === 'rollback');
-        if (ev.diff) Code.evolve(ev);
-      } else {
-        Cap.now(ev.kind === 'grow' ? 'GROW' : 'HEAL', ev.kind === 'grow' ? `새 Agent ${AGENT_KO[ev.agent_id] || ev.agent_id}가 태어났습니다` : `${AGENT_KO[ev.agent_id] || ev.agent_id}가 스스로 고친 코드로 교체되었습니다`,
-          `${ev.agent_id} ${ev.from_version || '—'} → ${ev.to_version}${ev.ref ? ` · ${ev.ref}` : ''} · +${ev.diff_add || 0}/−${ev.diff_del || 0}`, 'ver');
-      }
-      if (!ev.backlog) Evo.loadSoon();
-      break;
-    }
-    case 'registry':
-      if (ev.event === 'shadow') Loops.go('L3', 'shadow', ev, { detail: `${short(ev.agent_id)} ${ev.note || ''}` });
-      if (ev.event === 'deprecate') Loops.go('L3', 'select', ev, { detail: `${short(ev.agent_id)} 폐기 유예 — ${ev.note || ''}` });
-      if (ev.event === 'retire') { Loops.go('L3', 'archive', ev, { detail: `${short(ev.agent_id)} 폐기 → 아카이브 보관` }); Cap.now('L3', `${AGENT_KO[ev.agent_id] || ev.agent_id}를 폐기하고 아카이브에 보관합니다`, ev.note, 'ver'); }
-      if (!ev.backlog && ev.event !== 'baseline') Evo.loadSoon();
-      break;
-    case 'candidate':
-      Loops.go('L3', 'eval', ev, { run: ev.run_id, bad: ev.ok === false, detail: `${ev.cid} ${ev.title || ''} — ${ev.reason || ''}` });
-      Cap.step('L3', `후보 ${ev.cid}`, ev.ok === false);
-      break;
-    case 'approval': {
-      const L1k = ev.kind === 'state_change';
-      if (ev.action === 'requested') {
-        Loops.go(L1k ? 'L1' : 'L3', L1k ? 'gate' : 'select', ev, { detail: `승인 대기 — ${ev.title}` });
-        Loops.wait(L1k ? 'L1' : 'L3', L1k ? 'gate' : 'select');
-        Cap.now(L1k ? 'L1' : 'L3', '사람 승인을 기다립니다 — 무승인 변경은 0건', ev.title, 'gate');
-      } else if (!String(ev.approver || '').includes('교대')) {
-        Loops.go(L1k ? 'L1' : 'L3', L1k ? 'gate' : 'select', ev, { bad: !ev.approved, detail: `${ev.approved ? '승인' : '반려'} — ${ev.approver}` });
-        Cap.now(L1k ? 'L1' : 'L3', `사람이 ${ev.approved ? '승인했습니다' : '반려했습니다'}`, `${ev.title} — ${ev.approver}${ev.reason ? ` (${ev.reason})` : ''}`, ev.approved ? 'ok' : 'bad');
-      }
-      break;
-    }
-    case 'fault':
-      Cap.now('L1', '장애 주입 — 현실의 변화(로그 포맷·DB 이관 등)가 일어났습니다', ev.text, 'bad');
-      break;
-    case 'ops_batch':
-      if (ev.phase === 'start') { Loops.status('L1', `배경 운영 0/${ev.n} · 자율 처리`); Cap.now('L1', '배경 운영 — 가상 엔지니어들의 요청을 Agent가 자율 처리합니다 (세부 화면 생략)', `${ev.start.slice(5, 16)} → ${ev.end.slice(5, 16)} · PM ${ev.n}건`); }
-      if (ev.phase === 'progress') Loops.status('L1', `배경 운영 ${ev.done}/${ev.n} · 자율 처리`);
-      if (ev.phase === 'end') Loops.status('L1', `배경 운영 ${ev.n}건 완료`);
-      if (!ev.backlog) Loops.wake('L1');
-      break;
-    case 'replay_progress':
-      if (ev.phase === 'start') Loops.status('L3', `리플레이 0/${ev.total.toLocaleString()} · Time-Travel Guard ON`);
-      if (ev.phase === 'quarter_start') { Loops.status('L3', `리플레이 ${ev.quarter} · ${ev.split === 'heldout' ? 'Held-out (진화 없이 평가만)' : '진화 구간'}`); Cap.story(`이력 리플레이 — ${ev.quarter} 재생 중 (${ev.n}건). 미래 데이터는 Time-Travel Guard가 차단합니다.`); }
-      if (ev.phase === 'case') Loops.status('L3', `리플레이 ${ev.done.toLocaleString()}/${ev.total.toLocaleString()} · ${String(ev.replay_clock || '').slice(0, 10)} · Guard 차단 ${ev.guard ?? 0}`);
-      if (!ev.backlog) Loops.wake('L3');
-      break;
-    case 'replay_quarter':
-      Cap.now('L3', `${ev.quarter} 진화 결과 — 판정 일치율 ${ev.accuracy}% · 추천 오차 ±${ev.rec_error}매`, (ev.events || []).slice(0, 2).join(' · '), 'ver');
-      break;
-    case '_state': Evo.sync(); break;
-    default: break;
-  }
-}
-
-/* ══════════════════════════════════════════════════════════
-   질문 입력
-   ══════════════════════════════════════════════════════════ */
-const PRESETS = [
-  'ETCH-07 B챔버 Wet Clean PM 끝났어. AutoQual 진행해줘',
-  '지난 분기 ETCH 장비에서 Qual Fail 났던 건들, 교체 부품 사용시간이랑 관계 있는지 분석해줘',
-  'CVD-05 A챔버 PM 사이클 간 drift 추이 보여줘',
-  'ETCH-07 B챔버 Wet Clean 최근 이력 보여줘',
-  'Particle 15ea, ER 187.2 nm/min, Unif 2.4%',
-];
-function askForm() {
-  const inp = h('input', { class: 'fl-in', list: 'fl-presets', placeholder: '질문을 넣어 Agent를 직접 움직여 보세요 (예시는 ▾)', 'aria-label': '질문 입력' });
-  const f = h('form', { class: 'fl-ask' }, inp, h('datalist', { id: 'fl-presets' }, ...PRESETS.map((p) => h('option', { value: p }))),
-    h('button', { class: 'btn primary small', type: 'submit' }, '질문'));
-  f.onsubmit = async (e) => {
-    e.preventDefault();
-    const t = inp.value.trim();
-    if (!t) return;
-    inp.value = '';
-    try { await api('/api/chat', { text: t }); } catch (err) { A.toast(err.message, 'error'); }
-  };
-  return f;
-}
-
-export const Flow = {
-  init(app) {
+export const Stage = {
+  init(app, { cap, loops, evo }) {
     A = app;
-    const v = $('#view-flow');
-    const cap = h('section', { class: 'fl-cap' });
-    const loops = h('section', { class: 'fl-panel fl-loops' });
-    const code = h('section', { class: 'fl-panel fl-code' });
-    const jev = h('section', { class: 'fl-panel fl-jev' });
-    const evo = h('section', { class: 'fl-panel fl-evo' });
-    loops.append(h('header', { class: 'fp-h' }, h('b', { class: 'kw l1' }, 'LOOP ENGINEERING'),
-      h('span', { class: 'fp-d' }, '3중 루프 — 각 루프에 예산·종료 조건·검증 게이트'), askForm()));
-    const map = h('div', { class: 'fl-map' });
-    loops.append(map, h('footer', { class: 'fl-leg' },
-      h('span', {}, h('i', { class: 'lg-tok' }), '토큰 = 지금 실행 중인 위치'),
-      h('span', {}, h('i', { class: 'lg-ca' }), 'CodeAct (코드 작성·실행)'),
-      h('span', {}, h('i', { class: 'lg-jev' }), 'Jev 판단 (보정 확률)'),
-      h('span', {}, h('i', { class: 'lg-det' }), '결정적 코드 (LLM 아님)'),
-      h('span', {}, h('i', { class: 'lg-gate' }), '사람 승인')));
-    v.append(cap, loops, h('div', { class: 'fl-right' }, code, jev), evo);
     Cap.build(cap);
-    Loops.build(map);
-    Code.build(code);
-    Jev.build(jev);
-    Evo.build(evo);
-    A.on('*', onEvent);
-    Evo.sync();
+    Loops.build(loops);
+    if (evo) { Evo.build(evo); Evo.sync(); }
     addEventListener('resize', debounce(() => Evo.render(), 300));
   },
-  shown() { Evo.render(); },
+  event(ev) {
+    switch (ev.type) {
+      case 'chapter':
+        if (ev.phase === 'start') { Cap.chapter(ev); if (!ev.backlog) Loops.reset(); }
+        break;
+      case 'story': Cap.story(ev.text); break;
+      case 'request':
+        Cap.question(ev.user || '엔지니어', ev.text, ev.request_id);
+        Loops.go('L1', 'q', ev, { run: ev.request_id, detail: ev.text });
+        Loops.status('L1', `${ev.request_id} · 진행 중`);
+        Cap.now('L1', '요청이 들어왔습니다 — Super Agent가 처리를 시작합니다', ev.request_id);
+        Cap.step('L1', '요청', false);
+        break;
+      case 'replay_case':
+        Cap.question('리플레이', ev.text, `${ev.quarter} · replay_clock ${String(ev.replay_clock || '').slice(0, 10)}`);
+        Loops.go('L1', 'q', ev, { run: `RP-${ev.qh_seq}`, detail: `과거 이력 재생 — ${ev.chamber_id} ${ev.pm_type}` });
+        Loops.status('L1', `리플레이 QH ${ev.qh_seq} · ${ev.quarter}`);
+        Cap.step('L1', '요청(과거)', false);
+        break;
+      case 'node': onNode(ev); break;
+      case 'response': if (ev.request_id) Loops.status('L1', `${ev.request_id} · 응답`); break;
+      case 'budget': {
+        const lane = ev.heal_id ? 'HEAL' : 'GROW';
+        Loops.status(lane, `${ev.heal_id || ev.grow_id} · 시도 ${ev.attempts}/${ev.max_attempts} · ${ev.minutes}/${ev.max_minutes}분`);
+        break;
+      }
+      case 'version': {
+        if (ev.kind === 'baseline') break;
+        if (['evolve', 'compose', 'rollback', 'promote', 'restore'].includes(ev.kind)) {
+          Loops.go('L3', 'promote', ev, { bad: ev.kind === 'rollback', detail: `${short(ev.agent_id)} ${ev.from_version || '—'} → ${ev.to_version} (${VKIND[ev.kind]})` });
+          if (!ev.backlog) Loops.spark('l3-l1');
+          Cap.now('L3', ev.kind === 'rollback' ? `자동 롤백 — ${AGENT_KO[ev.agent_id] || ev.agent_id}를 이전 버전으로 되돌립니다`
+            : `${AGENT_KO[ev.agent_id] || ev.agent_id}가 새 버전으로 진화했습니다 — 다음 요청부터 이 코드로 동작합니다`,
+          `${ev.agent_id} ${ev.from_version || '—'} → ${ev.to_version} · ${VKIND[ev.kind] || ev.kind}${ev.ref ? ` ${ev.ref}` : ''} · +${ev.diff_add || 0}/−${ev.diff_del || 0}`, ev.kind === 'rollback' ? 'bad' : 'ver');
+          Cap.step('L3', ev.kind === 'rollback' ? '롤백' : `${short(ev.agent_id)} ${ev.to_version}`, ev.kind === 'rollback');
+        } else {
+          Cap.now(ev.kind === 'grow' ? 'GROW' : 'HEAL', ev.kind === 'grow' ? `새 Agent ${AGENT_KO[ev.agent_id] || ev.agent_id}가 태어났습니다` : `${AGENT_KO[ev.agent_id] || ev.agent_id}가 스스로 고친 코드로 교체되었습니다`,
+            `${ev.agent_id} ${ev.from_version || '—'} → ${ev.to_version}${ev.ref ? ` · ${ev.ref}` : ''} · +${ev.diff_add || 0}/−${ev.diff_del || 0}`, 'ver');
+        }
+        if (!ev.backlog) Evo.loadSoon();
+        break;
+      }
+      case 'registry':
+        if (ev.event === 'shadow') Loops.go('L3', 'shadow', ev, { detail: `${short(ev.agent_id)} ${ev.note || ''}` });
+        if (ev.event === 'deprecate') Loops.go('L3', 'select', ev, { detail: `${short(ev.agent_id)} 폐기 유예 — ${ev.note || ''}` });
+        if (ev.event === 'retire') { Loops.go('L3', 'archive', ev, { detail: `${short(ev.agent_id)} 폐기 → 아카이브 보관` }); Cap.now('L3', `${AGENT_KO[ev.agent_id] || ev.agent_id}를 폐기하고 아카이브에 보관합니다`, ev.note, 'ver'); }
+        if (!ev.backlog && ev.event !== 'baseline') Evo.loadSoon();
+        break;
+      case 'candidate':
+        Loops.go('L3', 'eval', ev, { run: ev.run_id, bad: ev.ok === false, detail: `${ev.cid} ${ev.title || ''} — ${ev.reason || ''}` });
+        Cap.step('L3', `후보 ${ev.cid}`, ev.ok === false);
+        break;
+      case 'approval': {
+        const L1k = ev.kind === 'state_change';
+        if (ev.action === 'requested') {
+          Loops.go(L1k ? 'L1' : 'L3', L1k ? 'gate' : 'select', ev, { detail: `승인 대기 — ${ev.title}` });
+          Loops.wait(L1k ? 'L1' : 'L3', L1k ? 'gate' : 'select');
+          Cap.now(L1k ? 'L1' : 'L3', '사람 승인을 기다립니다 — 무승인 변경은 0건', ev.title, 'gate');
+        } else if (!String(ev.approver || '').includes('교대')) {
+          Loops.go(L1k ? 'L1' : 'L3', L1k ? 'gate' : 'select', ev, { bad: !ev.approved, detail: `${ev.approved ? '승인' : '반려'} — ${ev.approver}` });
+          Cap.now(L1k ? 'L1' : 'L3', `사람이 ${ev.approved ? '승인했습니다' : '반려했습니다'}`, `${ev.title} — ${ev.approver}${ev.reason ? ` (${ev.reason})` : ''}`, ev.approved ? 'ok' : 'bad');
+        }
+        break;
+      }
+      case 'fault': Cap.now('L1', '장애 주입 — 현실의 변화(로그 포맷·DB 이관 등)가 일어났습니다', ev.text, 'bad'); break;
+      case 'ops_batch':
+        if (ev.phase === 'start') { Loops.status('L1', `배경 운영 0/${ev.n} · 자율 처리`); Cap.now('L1', '배경 운영 — 가상 엔지니어들의 AutoQual 요청을 Agent가 자율 처리합니다', `${ev.start.slice(5, 16)} → ${ev.end.slice(5, 16)} · PM ${ev.n}건`); }
+        if (ev.phase === 'progress') Loops.status('L1', `배경 운영 ${ev.done}/${ev.n} · 자율 처리`);
+        if (ev.phase === 'end') Loops.status('L1', `배경 운영 ${ev.n}건 완료`);
+        if (!ev.backlog) Loops.wake('L1');
+        break;
+      case 'replay_progress':
+        if (ev.phase === 'start') Loops.status('L3', `리플레이 0/${ev.total.toLocaleString()} · Time-Travel Guard ON`);
+        if (ev.phase === 'quarter_start') { Loops.status('L3', `리플레이 ${ev.quarter} · ${ev.split === 'heldout' ? 'Held-out (진화 없이 평가만)' : '진화 구간'}`); Cap.story(`이력 리플레이 — ${ev.quarter} 재생 중 (${ev.n}건). 미래 데이터는 Time-Travel Guard가 차단합니다.`); }
+        if (ev.phase === 'case') Loops.status('L3', `리플레이 ${ev.done.toLocaleString()}/${ev.total.toLocaleString()} · ${String(ev.replay_clock || '').slice(0, 10)} · Guard 차단 ${ev.guard ?? 0}`);
+        if (!ev.backlog) Loops.wake('L3');
+        break;
+      case 'replay_quarter':
+        Cap.now('L3', `${ev.quarter} 진화 결과 — 판정 일치율 ${ev.accuracy}% · 추천 오차 ±${ev.rec_error}매`, (ev.events || []).slice(0, 2).join(' · '), 'ver');
+        break;
+      case '_state': Evo.sync(); break;
+      default: break;
+    }
+  },
+  shown() { if (Evo.el.scroll) Evo.render(); },
 };

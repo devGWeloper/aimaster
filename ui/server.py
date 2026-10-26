@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import queue
 import re
 import sys
@@ -32,6 +33,15 @@ STATIC = Path(__file__).resolve().parent / "static"
 app = FastAPI(title="AutoQual Self-Evolving Agent")
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
+
+@app.middleware("http")
+async def no_cache_static(request: Request, call_next):
+    """정적 파일(ES 모듈·CSS)은 항상 재검증 — 빌드 없이 수정하므로 브라우저가 옛 모듈을 쓰지 않게 한다."""
+    resp = await call_next(request)
+    if request.url.path.startswith("/static") or request.url.path == "/":
+        resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return resp
+
 SYS: System | None = None
 STORY: Story | None = None
 _kpi_cache = {"t": 0, "v": None}
@@ -40,7 +50,7 @@ _kpi_cache = {"t": 0, "v": None}
 def sysm() -> System:
     global SYS, STORY
     if SYS is None:
-        SYS = System()
+        SYS = System(os.environ.get("AUTOQUAL_RUNTIME") or None)   # 실행 상태 디렉터리 (기본 runtime/, 테스트·병행 실행 시 분리 가능)
         STORY = Story(SYS)
     return SYS
 
@@ -83,7 +93,7 @@ def events(request: Request, since: int = 0):
 
     def gen():
         try:
-            backlog = S.bus.recent(1500, since)
+            backlog = S.bus.recent(6000, since)
             for e in backlog:
                 yield f"data: {json.dumps(e, ensure_ascii=False, default=str)}\n\n"
             last = time.time()
@@ -265,6 +275,27 @@ def kpi(fresh: int = 0):
         _kpi_cache["v"] = sysm().kpi()
         _kpi_cache["t"] = time.time()
     return J(_kpi_cache["v"])
+
+
+@app.get("/api/autoqual/cases")
+def autoqual_cases(limit: int = 120):
+    """운영 기간에 Agent가 처리한 AutoQual 건(경험 메모리 case) — 업무 흐름 화면의 'Qual 처리 이력'."""
+    rows = sysm().store.all("SELECT id, event_ts, chamber_id, pm_type, eqp_model, content FROM experience "
+                            "WHERE kind='case' AND json_extract(content,'$.mode')='ops' ORDER BY event_ts DESC, id DESC LIMIT ?", (limit,))
+    out = []
+    for r in rows:
+        c = r["content"] or {}
+        a = c.get("actual") or {}
+        rec = c.get("recommendation") or {}
+        apr = c.get("approval") or {}
+        out.append({"id": r["id"], "ts": r["event_ts"], "request_id": c.get("request_id"), "chamber_id": r["chamber_id"],
+                    "pm_type": r["pm_type"], "eqp_model": r["eqp_model"], "eqp_group": c.get("eqp_group"), "pm_end": c.get("pm_end"),
+                    "count": rec.get("count"), "base": rec.get("base"), "corrections": [x.get("lesson_id") for x in rec.get("corrections") or []],
+                    "n1": a.get("n1"), "pass1": a.get("pass1"), "fail_items": a.get("fail_items"), "attempts": a.get("attempts"),
+                    "final_count": a.get("final_count"), "final_pass": a.get("final_pass"), "override": c.get("override"),
+                    "engineer": a.get("eng"), "approver": apr.get("approver"), "approved": apr.get("approved"),
+                    "versions": c.get("versions"), "escalated": c.get("escalated"), "wait": a.get("wait")})
+    return J(out)
 
 
 @app.get("/api/audit")

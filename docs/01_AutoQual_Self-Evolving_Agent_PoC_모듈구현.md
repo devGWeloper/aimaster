@@ -65,18 +65,19 @@
 
 * **주요 기술:** `autoqual/jev.py`(로컬 보정 로지스틱 헤드, `config/jev.json` mode=http면 같은 시그니처로 사내 엔드포인트 호출), `autoqual/judge.py`
 
-**1.8 운영 UI — 흐름 화면 (Agent가 도는 과정을 한 화면에)**
+**1.8 운영 UI — Agent 무대 (Loop Engineering · Agent 편성 · Self-Evolving을 크게)**
 
-* **구현 기능:** 기본 화면인 **「흐름」**에서 질문 하나가 Loop Engineering → CodeAct → Self-Evolving을 거치는 과정을 실시간으로 보여준다. 기존 관제·루프 트레이스·리플레이·리포트·Registry·아카이브·승인·Fab·KPI 화면은 그대로 유지했다
+* **구현 기능:** 기본 화면 **「무대」**는 과제의 핵심 셋만 크게 보여준다. 위 왼쪽 **LOOP ENGINEERING**(3중 루프 트랙), 위 오른쪽 **AGENT 편성**(호출·가져온 값·생성/치유/진화/폐기), 아래 **SELF-EVOLVING**(진화 사건 피드 + 5계층 + Genome 계보). 요청·응답 전문과 단계별 트레이스는 **「대화」** 화면(채팅 · 동적 편성 맵 · 실행 트레이스), AutoQual 업무 단계·Fab 현황·처리 이력은 **「Fab·업무」** 화면에 둔다. 루프 트레이스·리플레이·리포트·Registry·아카이브·승인·KPI 화면은 그대로다
 
 * **동작 원리:**
-  * **자막 바**: 시나리오 · 질문 · "지금 Agent가 하는 일" 한 문장 · 지나온 단계 경로
-  * **LOOP ENGINEERING**: L3/L1/L2(Grow·Heal)를 트랙(윗변 = 진행, 아랫변 = 되돌아가는 길)으로 그린다. 이벤트가 오면 토큰이 실제 노드를 따라 움직이고, 재시도나 다음 주기는 트랙을 한 바퀴 돌아 표시된다. 루프 사이 연결(확인 불가 → Heal, 처리 불가 → Grow, 경험 → L3, 새 버전 배포 → L1)이 빛나고, 예산 상태(`시도 n/5 · m/15분`)가 표시된다
-  * **CODEACT**: Agent가 작성한 코드가 타이핑되듯 나타나고, `LLM 작성 → AST 검사 → import 검사 → 샌드박스 실행 → 사후 검증` 단계와 하위 Agent 호출 결과가 표시된다. Heal 패치와 Evolve 진화는 diff로 보여준다
-  * **JEV 판단**: 확률 막대를 표시한다
-  * **SELF-EVOLVING**: Agent × 사건 계보(Grow·Heal·Evolve·롤백·폐기 색 구분)를 그리고, 새 버전이 생기면 바로 반짝인다
+  * **자막 바**: 시나리오 · 요청 · "지금 Agent가 하는 일" 한 문장 · 지나온 단계 경로 · **AGENTIC 지표**(CodeAct 실행·Agent 호출·Jev 판단·Self-Heal·Agent 생성·진화 반영·사람 승인·무승인 변경 0)
+  * **LOOP ENGINEERING**(`stage.js`): L3/L1/L2(Grow·Heal)를 트랙(윗변 = 진행, 아랫변 = 되돌아가는 길)으로 그린다. 이벤트가 오면 토큰이 실제 노드를 따라 움직이고, 루프 사이 연결(확인 불가 → Heal, 처리 불가 → Grow, 경험 → L3, 새 버전 배포 → L1)이 빛나며, 예산 상태(`시도 n/5 · m/15분`)가 표시된다
+  * **AGENT 편성**(`graph.js`, `createGraph`로 무대·대화에 각각 인스턴스): Super Agent → 하위 Agent 호출을 펄스로 그리고, 호출이 끝나면 그 Agent가 **가져온 값**(예: `Leak Rate 0.81 mTorr/min`)이 값 칩으로 뜬다. 오류는 빨간 칩(→ Heal), Heal 중인 Agent는 스캔 효과, 새 Agent는 패터닝 애니메이션과 NEW 배지, 버전 변경은 `1.0.0 → 1.0.1` 칩, 폐기는 희미해진다. 대화 모드에서는 Super Agent 아래 "지금 단계" 라벨, 호출 순번 배지, 액션 이름 엣지 라벨이 붙고 값 칩은 다음 요청까지 유지된다
+  * **SELF-EVOLVING**(`evolve.js`): 리포트(Grow·Heal·분기/판단/구조/편성/병합 진화·롤백·폐기)를 사건 카드로 보여준다. 카드마다 종류·결과·4단계 파이프라인(감지 → 변이 후보 → 하네스 평가 → 선택·반영)이 있고, 펼치면 감지 근거, 후보 표(계층·Evolve셋 Δ·Held-out Δ·채택/기각 사유·반영 버전·신규 교훈), 패치 diff, 테스트 결과가 나온다. 진행 중인 런은 이벤트로 파이프라인이 실시간으로 채워지다가 리포트가 오면 완성 카드로 바뀐다. 오른쪽에는 진화 대상 **5계층**(① 파라미터·교훈 ② 스킬 ③ Agent 코드 ④ Agent 구성 ⑤ 편성 전략)별 채택 수와 Agent × 사건 **Genome 계보**(행 = Agent, 열 = 사건, 알약 = 새 버전)
+  * **대화**(`live.js`): 엔지니어 요청과 Super Agent 응답 블록(편성·절차·챔버 상태·이력·추천·판정·상태 변경), 가운데 동적 편성 맵, 오른쪽 실행 트레이스(`trace.js` — 요청·Heal·Grow·진화·배경 운영을 런으로 묶고 CODEACT / JEV / AGENT / SANDBOX / DETERMINISTIC / HUMAN 배지, 펼치면 코드·확률·입력과 가져온 값·도구 원장·판정 표·승인 버튼·diff)
+  * **Fab·업무**(`biz.js`): AutoQual 정의 → 현재 건의 7단계 스테퍼(PM 완료 → Qual 절차 → 매수 추천 → Seasoning·측정 → Spec 판정 → 사람 승인 → UP), 90챔버 미니맵, Agent가 처리한 Qual 이력(`/api/autoqual/cases`, 배경 운영 포함)과 직접 요청 입력
 
-* **주요 기술:** FastAPI + SSE(EventBus가 모든 node·jev·code·version 이벤트 송출), 빌드 없는 ES 모듈(`ui/static/js/flow.js`), SVG 경로 애니메이션(`getPointAtLength`), 접속 시 이벤트 백로그를 재생해 상태 복원. `version` 이벤트에 진화·롤백 diff를 실어 L3 코드 변경도 CodeAct 패널에 표시
+* **주요 기술:** FastAPI + SSE(EventBus가 모든 node·jev·code·agent_start/agent_end·version 이벤트 송출, 버퍼 16,000건), `agent_end` 이벤트에 출력 요약(`summarize_output`)·도구 원장·입력·호출자를 실어 "어떤 값을 불러왔는지"를 UI가 그대로 표시, 빌드 없는 ES 모듈(`board.js`가 무대를 조립), SVG 경로 애니메이션(`getPointAtLength`), 배경 운영(muted) 요청은 병렬 스레드까지 이벤트를 내지 않아 화면이 시나리오 요청에 집중된다. 정적 파일은 `Cache-Control: no-cache`로 내보내고 실행 상태 디렉터리는 `AUTOQUAL_RUNTIME` 환경변수로 분리할 수 있다
 
 ### 주요 문제 해결 및 기술 리서치
 

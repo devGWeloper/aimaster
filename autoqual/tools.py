@@ -197,7 +197,7 @@ def make_tools(ctx: RunContext, agent_id: str) -> dict:
         return None
 
     def call_agent(target, action, inputs):
-        return sysm.runtime.run_agent(ctx, target, action, inputs, indirect=True)
+        return sysm.runtime.run_agent(ctx, target, action, inputs, indirect=True, caller=agent_id)
 
     def now():
         return S(ctx.clock())
