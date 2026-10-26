@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AutoQual Self-Evolving Agent</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='none' stroke='%233FD0C4' stroke-width='3'/%3E%3Cpath d='M12 29h8' stroke='%23141A21' stroke-width='4'/%3E%3Crect x='13' y='13' width='6' height='6' fill='%23FFB547'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body data-view="flow">
+<div class="app" id="app">
+  <header class="top">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true">
+        <circle cx="20" cy="20" r="16" class="bm-wafer"/>
+        <path d="M15 35.6h10" class="bm-notch"/>
+        <g class="bm-dies"><rect x="12" y="12" width="7" height="7"/><rect x="21" y="12" width="7" height="7"/><rect x="12" y="21" width="7" height="7"/><rect x="21" y="21" width="7" height="7" class="bm-hot"/></g>
+      </svg>
+      <div class="brand-txt">
+        <div class="brand-name">AutoQual</div>
+        <div class="brand-sub">Self-Evolving Agent 운영 콘솔</div>
+      </div>
+    </div>
+    <div class="clock" id="clock" title="가상 시각 — 스토리 진행 시각">
+      <div class="clock-d" id="clock-d">2026-07-01</div>
+      <div class="clock-t" id="clock-t">09:00</div>
+    </div>
+    <div class="mode" id="mode"></div>
+    <div class="spacer"></div>
+    <div class="ctrl">
+      <button class="btn primary" id="btn-play" title="Autopilot: 시나리오 타임라인을 Agent가 스스로 수행">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M8 5v14l11-7z"/></svg><span id="play-label">Autopilot 시작</span>
+      </button>
+      <button class="btn" id="btn-pause" title="일시정지 / 재개"><svg viewBox="0 0 24 24" class="ic"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg></button>
+      <button class="btn" id="btn-stop" title="정지"><svg viewBox="0 0 24 24" class="ic"><path d="M6 6h12v12H6z"/></svg></button>
+      <div class="seg" id="speed" role="group" aria-label="재생 속도">
+        <button data-v="0.5">0.5×</button><button data-v="1" class="on">1×</button><button data-v="2">2×</button><button data-v="4">4×</button><button data-v="0">최대</button>
+      </div>
+      <label class="switch" title="승인 지점에서 사람이 직접 승인할지, 데모 운영자가 4초 후 자동 승인할지">
+        <input type="checkbox" id="auto-approve"><span class="sw"></span><span class="sw-l" id="approve-label">승인: 사람</span>
+      </label>
+    </div>
+  </header>
+
+  <nav class="chapters" id="chapters" aria-label="시나리오 타임라인"></nav>
+
+  <aside class="rail" id="rail">
+    <button data-view="flow" class="on" title="흐름 — 질문 하나가 루프·CodeAct·진화를 거치는 과정"><svg viewBox="0 0 24 24" class="ic"><path d="M4 9a5 5 0 0 1 5-5h6a5 5 0 0 1 0 10H9"/><path d="M11 11.5 8.5 14l2.5 2.5"/><path d="M4 20h16"/></svg><span>흐름</span></button>
+    <button data-view="live" title="관제"><svg viewBox="0 0 24 24" class="ic"><circle cx="12" cy="12" r="8.5"/><path d="M10 10h4v4h-4z"/></svg><span>관제</span></button>
+    <button data-view="trace" title="루프 트레이스"><svg viewBox="0 0 24 24" class="ic"><path d="M4 7h7v4H4zM13 13h7v4h-7zM11 9h3v6"/></svg><span>루프</span></button>
+    <button data-view="replay" title="리플레이 진화"><svg viewBox="0 0 24 24" class="ic"><path d="M4 18l5-6 4 3 7-9"/><path d="M4 21h16"/></svg><span>리플레이</span></button>
+    <button data-view="reports" title="Heal·진화 리포트"><svg viewBox="0 0 24 24" class="ic"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h5"/></svg><span>리포트</span></button>
+    <button data-view="registry" title="Registry·Lineage"><svg viewBox="0 0 24 24" class="ic"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M6 8.5v7M8.3 7l7.4 4M8.3 17l7.4-4"/></svg><span>Registry</span></button>
+    <button data-view="archive" title="진화 아카이브"><svg viewBox="0 0 24 24" class="ic"><path d="M3 5h18v4H3zM5 9v10h14V9M10 13h4"/></svg><span>아카이브</span></button>
+    <button data-view="approvals" title="승인 패널"><svg viewBox="0 0 24 24" class="ic"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg><span>승인</span><b class="badge" id="badge-approvals"></b></button>
+    <button data-view="fab" title="Fab 현황"><svg viewBox="0 0 24 24" class="ic"><path d="M3 20V9l5 3V9l5 3V6l8 4v10z"/></svg><span>Fab</span></button>
+    <button data-view="kpi" title="KPI"><svg viewBox="0 0 24 24" class="ic"><path d="M5 20V12M10 20V6M15 20v-9M20 20V9"/></svg><span>KPI</span></button>
+  </aside>
+
+  <main class="main" id="main">
+    <section class="view flow on" id="view-flow"></section>
+    <section class="view live" id="view-live">
+      <div class="col chat">
+        <div class="col-h"><h2>대화</h2><span class="col-sub" id="chat-sub">엔지니어 요청 · Super Agent 응답</span></div>
+        <div class="chat-log" id="chat-log"></div>
+        <form class="chat-in" id="chat-form">
+          <div class="chips" id="chips"></div>
+          <div class="chat-row">
+            <textarea id="chat-text" rows="2" placeholder="예) ETCH-07 B챔버 Wet Clean PM 끝났어. AutoQual 진행해줘"></textarea>
+            <button class="btn primary send" type="submit">요청</button>
+          </div>
+        </form>
+      </div>
+      <div class="col center">
+        <div class="wafer-wrap">
+          <div class="wafer-h">
+            <h2>Agent 편성 맵</h2>
+            <div class="loops" id="loops"></div>
+          </div>
+          <svg id="wafer" viewBox="0 0 640 600" role="img" aria-label="Agent 편성 웨이퍼 맵"></svg>
+          <div class="wafer-legend" id="wafer-legend"></div>
+        </div>
+        <div class="codeact" id="codeact">
+          <div class="ca-h"><h2>CodeAct</h2><span class="ca-meta" id="ca-meta">Agent가 작성한 코드가 여기서 샌드박스로 실행됩니다</span></div>
+          <pre class="ca-code" id="ca-code"></pre>
+          <div class="ca-foot" id="ca-foot"></div>
+        </div>
+      </div>
+      <div class="col stream">
+        <div class="col-h"><h2>사고 흐름</h2><span class="col-sub" id="stream-sub">Jev 판단 · 루프 노드 · 버전 변화</span></div>
+        <div class="filters" id="stream-filters">
+          <button data-f="all" class="on">전체</button><button data-f="L1">L1 Task</button><button data-f="L2">L2 Heal·Grow</button><button data-f="L3">L3 Evolve</button><button data-f="ops">배경 운영</button>
+        </div>
+        <div class="stream-log" id="stream-log"></div>
+      </div>
+    </section>
+    <section class="view" id="view-trace"></section>
+    <section class="view" id="view-replay"></section>
+    <section class="view" id="view-reports"></section>
+    <section class="view" id="view-registry"></section>
+    <section class="view" id="view-archive"></section>
+    <section class="view" id="view-approvals"></section>
+    <section class="view" id="view-fab"></section>
+    <section class="view" id="view-kpi"></section>
+  </main>
+</div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<div class="gate" id="gate" hidden></div>
+<script>window.__errs=[];addEventListener("error",e=>__errs.push(e.message+" "+e.filename+":"+e.lineno));addEventListener("unhandledrejection",e=>__errs.push(String(e.reason&&e.reason.stack||e.reason)));</script>
+<script type="module" src="/static/js/app.js"></script>
+</body>
+</html>

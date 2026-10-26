@@ -20,34 +20,44 @@
 ```
 aimaster/
 ├─ CLAUDE.md
-├─ docs/                                   # 단계별 문서 (번호 = 진행 순서)
+├─ docs/                                   # 제출 산출물은 하위 폴더 없이 여기에 모은다
 │  ├─ 00_ideation/                         # 주제 선정 전 후보 기록 (보존만, 수정하지 않음)
 │  │  ├─ 01_eWorks_Self-Healing_Hybrid_Agent/   # AutoQual의 전신 (v1 → v2 → 기획서)
 │  │  ├─ 02_Persona_Swarm/
 │  │  └─ 03_Talk-to-Fab/                   # 초안·시나리오 + demo/ (디지털트윈 웹 데모)
-│  ├─ 01_planning/                         # 확정 주제 기획서·시나리오
-│  ├─ 02_architecture/                     # 설계서 + format.md(설계서 양식)
-│  └─ (03_ 이후: 데이터 명세, 구현 기록, 평가 리포트 등 단계가 진행되면 추가)
+│  ├─ 01_AutoQual_Self-Evolving_Agent_*.md # 산출물 (아래 문서 맵)
+│  └─ format.md                            # 설계서 양식
 │
-│  # ↓ 개발 단계에서 만들 예정 (설계서 기준 초안, 구현 시작 시 확정)
-├─ mock_env/      # 목업 데이터 생성기·장애 주입기·생성된 Mock DB/로그
-├─ autoqual/      # 에이전트 본체: Super Agent, 메인 Agent 3종, CodeAct 런타임, Registry, L1/L2/L3 루프
-├─ eval/          # 고정 평가 하네스, Evolve/Held-out셋, KPI 측정 스크립트 (루프가 수정 불가)
-├─ ui/            # 운영 UI
-└─ tests/
+├─ mock_env/      # 목업 Fab: config·simulator(Qual 물리)·generate(DB 생성, 시드 고정)·formats(SW 버전별 로그)·world(데이터 서버·장애 주입·MES)
+│                 #   data/*.db 는 생성물 (python -m mock_env.generate 로 재생성, git 제외)
+├─ autoqual/      # 에이전트 본체: system·store·sandbox(CodeAct)·tools·jev·llm(사내 API 어댑터)·registry·runtime·super_agent·judge·memory
+│  ├─ genomes/    #   Agent·스킬 Genome 소스 빌더 + 오프라인 Playbook (기능 플래그 → 실제 코드)
+│  ├─ loops/      #   l1(LangGraph L1), l2_heal, l2_grow(Agent Factory), l3_evolve(리플레이 분기 진화), l3_ops(운영 진화·롤백·폐기), replay
+│  ├─ ops.py      #   요청 실행기 + 배경 운영 시뮬레이터(가상 엔지니어)
+│  └─ story.py    #   Autopilot 타임라인 (SC-006 → SC-009, 챕터 체크포인트)
+├─ eval/          # 루프 밖 고정: policy.json(예산·임계값), harness(테스트·후보 평가), testcases(오라클), kpi
+├─ ui/            # 운영 UI: FastAPI + SSE 서버, static/ (빌드 없는 ES 모듈, 오프라인 폰트) — 기본 화면 「흐름」(flow.js): 3중 루프 트랙·CodeAct·Jev·Agent 계보
+├─ config/        # llm.example.json(사내 LLM API), jev.example.json — 실제 llm.json·jev.json 은 git 제외
+├─ runtime/       # 실행 상태(agentstore.db·legacy_live.db·checkpoints) — git 제외
+└─ tests/         # python -m unittest discover tests
 ```
+
+실행: `pip install -r requirements.txt` → `python -m mock_env.generate` → `python -m ui.server` (http://127.0.0.1:8765) → UI에서 Autopilot 시작. LLM은 사내 제공 API만 사용한다(`config/llm.json`, 키는 환경변수). 미설정 시 오프라인 Playbook으로 결정적 재현.
 
 ## 문서 맵
 
 | 단계 | 파일 | 내용 |
 | --- | --- | --- |
 | 아이디에이션 | `docs/00_ideation/*/` | 후보 주제 3종과 시나리오, Talk-to-Fab 데모 |
-| 기획 (확정) | `docs/01_planning/01_AutoQual_Self-Evolving_Agent_기획서.md` | 배경·목표·KPI·핵심 기능 10개·범위 |
-| 시나리오 | `docs/01_planning/01_AutoQual_Self-Evolving_Agent_시나리오.md` | 사용자·운영 시나리오 |
-| 설계 | `docs/02_architecture/01_AutoQual_Self-Evolving_Agent_설계서.md` | Agent 페르소나, LangGraph 워크플로우·상태, 도구 명세, 메모리 전략, 기술 스택 |
-| 설계 양식 | `docs/02_architecture/format.md` | 설계서 템플릿 |
+| 기획 (확정) | `docs/01_AutoQual_Self-Evolving_Agent_기획서.md` | 배경·목표·KPI·핵심 기능 10개·범위 |
+| 시나리오 | `docs/01_AutoQual_Self-Evolving_Agent_시나리오.md` | 사용자·운영 시나리오 |
+| 설계 양식 | `docs/format.md` | 설계서 템플릿 |
+| 상세 설계 및 개발 환경 구축 | `docs/01_AutoQual_Self-Evolving_Agent_상세설계_및_개발환경구축.md` | Agent 페르소나, LangGraph 워크플로우·상태, 도구 명세, 메모리 전략, 기술 스택 (구 설계서) |
+| PoC 모듈 구현 | `docs/01_AutoQual_Self-Evolving_Agent_PoC_모듈구현.md` | 핵심 구현(워크플로우·도구·메모리·CodeAct·3중 루프·Self-Evolving·Jev·흐름 UI), 문제 해결·리서치, 동작 검증(SC-001~003 실행 결과)·KPI 실측 |
+| 테스트 및 고도화 | `docs/01_AutoQual_Self-Evolving_Agent_테스트_및_고도화.md` | 작성 예정 (양식은 사용자 제공) |
+| E2E 서비스 개발 | `docs/01_AutoQual_Self-Evolving_Agent_E2E_서비스개발.md` | 작성 예정 (양식은 사용자 제공) |
 
-기능·KPI·도구 시그니처의 **기준(Source of Truth)은 위 기획서와 설계서**다. 구현이 설계와 달라지면 설계서도 함께 갱신한다.
+기능·KPI·도구 시그니처의 **기준(Source of Truth)은 위 기획서와 상세 설계서**다. 구현이 설계와 달라지면 상세 설계서도 함께 갱신한다.
 
 ## 데이터 정책 — 전부 목업
 
@@ -74,9 +84,9 @@ aimaster/
 
 ## 기술 스택 (설계서 기준)
 
-- LLM: `claude-opus-5-5`(Factory·Heal·Evolve 코드 생성), `claude-sonnet-5-5`(Super Agent 계획·종합), `claude-haiku-5-5`(요약·엔티티 추출), Jev(분기 판단, 대안 SemIf 또는 소형 분류 모델)
+- LLM: **사내 제공 API만 사용** (`autoqual/llm.py` 어댑터, OpenAI·Anthropic 호환 형식). 역할별 모델 `claude-opus-5-5`(Factory·Heal·Evolve 코드 생성), `claude-sonnet-5-5`(Super Agent 계획·종합), `claude-haiku-5-5`(요약·엔티티 추출). Jev(분기 판단) — 사내망 반입 전에는 로컬 보정 로지스틱 헤드
 - Agent Framework: LangGraph (StateGraph + Subgraph + Checkpointer + interrupt)
-- 저장소: PostgreSQL 단일 DB (Registry·경험 메모리·진화 아카이브·Lineage), RAG 미사용
+- 저장소: PostgreSQL 단일 DB (Registry·경험 메모리·진화 아카이브·Lineage), RAG 미사용 — PoC 구현은 동일 스키마를 SQLite(WAL)로 사용
 - Output: Pydantic Structured Output
 - Monitoring: Langfuse(셀프호스팅) + OpenTelemetry
 - 운영 UI: 채팅, Agent 편성 그래프, 루프 트레이스, 승인 패널, 진화 리포트·아카이브, Lineage 뷰
@@ -86,16 +96,19 @@ aimaster/
 - [x] 아이디에이션 (후보 4종 비교)
 - [x] 주제 확정: 01 AutoQual Self-Evolving Agent
 - [x] 기획서·시나리오·설계서 작성
-- [ ] Mock AutoQual 환경 (목업 데이터 생성기 + 장애 주입기)
-- [ ] CodeAct 런타임·샌드박스 / Agent Registry
-- [ ] Super Agent + 메인 Agent 3종 (L1 Task Loop)
-- [ ] Heal·Grow (L2) → Evolve·이력 리플레이 (L3)
-- [ ] 운영 UI
-- [ ] KPI 평가 및 최종 보고
+- [x] Mock AutoQual 환경 (목업 데이터 생성기 + 장애 주입기) — `mock_env/`
+- [x] CodeAct 런타임·샌드박스 / Agent Registry
+- [x] Super Agent + 메인 Agent 3종 (L1 Task Loop, LangGraph)
+- [x] Heal·Grow (L2) → Evolve·이력 리플레이 (L3), 운영 진화(판단·구조·편성)·롤백·폐기
+- [x] 운영 UI (Autopilot 타임라인 SC-006 → SC-009) + 흐름 화면(Loop Engineering·CodeAct·Self-Evolving 시각화)
+- [x] 시나리오 개정 반영: SC-002 스키마 탐색 기반 엣지 케이스 테스트, SC-003 로그 슬라이싱 진단
+- [x] PoC 모듈 구현 문서
+- [x] KPI 측정 — `eval/kpi.py`, 운영 UI KPI 화면
+- [ ] 사내 LLM API 실연동 검증 (`config/llm.json` 설정 후 온라인 모드 실행)
 
 ## 작업 규칙
 
 - 사용자와의 대화와 문서는 한국어로 작성한다
-- 문서는 `docs/NN_단계명/` 아래에 `NN_주제명_종류.md` 형식(예: `01_AutoQual_Self-Evolving_Agent_설계서.md`)으로 둔다
+- 산출물 문서는 하위 폴더 없이 `docs/` 바로 아래에 `01_AutoQual_Self-Evolving_Agent_종류.md` 형식으로 둔다. 새 md 문서는 사용자가 요청하거나 양식을 준 경우에만 만든다
 - 파일 이동·이름 변경은 `git mv`로 해서 이력을 유지한다
 - 단계가 끝나면 위 진행 현황 체크리스트를 갱신한다

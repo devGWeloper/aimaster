@@ -1,0 +1,44 @@
+{
+  "_comment": "루프 밖 고정 정책 — L1/L2/L3 루프는 읽기만 가능하며 수정할 수 없다 (평가 하네스·예산·임계값 하한). 변경은 운영자(사람)만.",
+  "loop_budget": {
+    "L1": {"max_replans": 3, "max_qual_fail": 3},
+    "L2": {"max_attempts": 5, "max_minutes": 15, "max_tokens": 120000},
+    "L3": {"max_candidates": 3, "cooldown_days_after_3_rejects": 7}
+  },
+  "jev": {
+    "route_auto": 0.90,
+    "route_escalate": 0.60,
+    "can_handle": 0.50,
+    "error_confidence": 0.70,
+    "state_change_floor": 0.95,
+    "readonly_confirm": 0.90
+  },
+  "selection": {
+    "heldout_tolerance_pp": 0.5,
+    "min_improvement_pp": 0.2,
+    "complexity_penalty_per_100_lines": 0.1
+  },
+  "shadow": {
+    "pre_promotion_hours": 24,
+    "post_promotion_days": 7,
+    "min_samples_per_group": 0,
+    "mismatch_rollback_threshold": 0.05
+  },
+  "lesson": {
+    "min_sources": 5,
+    "min_engineers": 2,
+    "physical_seasoning_range": [3, 120]
+  },
+  "retire": {
+    "unused_days": 60,
+    "grace_days": 14,
+    "verify_window_days": 30,
+    "protected": ["super_agent", "spec_agent", "log_agent", "legacy_agent"]
+  },
+  "post_validation": {
+    "LEAK_RATE": [0.05, 20.0],
+    "RF_REFL_DELTA": [-60.0, 200.0],
+    "BASE_PRESSURE_TORR": [1e-9, 1e-4],
+    "SEASONING_HOURS": [0, 5000]
+  }
+}
