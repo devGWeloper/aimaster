@@ -5,3 +5,5 @@ mock_env/data/*.db
 config/llm.json
 config/jev.json
 .venv/
+ui/web/node_modules/
+ui/web/node_modules/.tmp/

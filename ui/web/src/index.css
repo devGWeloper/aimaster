@@ -1,0 +1,218 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* AutoQual Self-Evolving Agent 운영 콘솔
+   — 챔버 그래파이트(어두운 관제실) 위에 박막 간섭색(L1 청록 · L2 마젠타 · L3 청자)으로 Agent 활동을,
+     Yellow Room 나트륨 앰버로 "사람 승인"을 표시한다. 한 번에 한 가지를 크게. */
+
+@font-face { font-family: "Pretendard Variable"; src: url("/fonts/PretendardVariable.woff2") format("woff2"); font-weight: 45 920; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("/fonts/JetBrainsMono.woff2") format("woff2"); font-weight: 100 800; font-display: swap; }
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: "Pretendard Variable", Pretendard, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+  --font-heading: var(--font-sans);
+  --font-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--l1);
+  --color-chart-2: var(--l2);
+  --color-chart-3: var(--l3);
+  --color-chart-4: var(--gate);
+  --color-chart-5: var(--jev);
+  --color-sidebar: var(--panel);
+  --color-sidebar-foreground: var(--ink);
+  --color-sidebar-primary: var(--l1);
+  --color-sidebar-primary-foreground: var(--background);
+  --color-sidebar-accent: var(--raise);
+  --color-sidebar-accent-foreground: var(--ink);
+  --color-sidebar-border: var(--line);
+  --color-sidebar-ring: var(--l1);
+
+  /* 도메인 토큰 */
+  --color-bg: var(--background);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-raise: var(--raise);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-l1: var(--l1);
+  --color-l2: var(--l2);
+  --color-l3: var(--l3);
+  --color-gate: var(--gate);
+  --color-jev: var(--jev);
+  --color-ok: var(--ok);
+  --color-bad: var(--bad);
+  --color-warn: var(--warn);
+
+  --radius-sm: 6px;
+  --radius-md: 9px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 22px;
+}
+
+:root {
+  color-scheme: dark;
+  --background: #11171d;
+  --foreground: #e8eef4;
+  --panel: #171e26;
+  --panel-2: #1d2630;
+  --raise: #243039;
+  --line: #28333f;
+  --line-2: #344251;
+  --ink: #e8eef4;
+  --ink-2: #aab8c6;
+  --ink-3: #74828f;
+  --l1: #3fd0c4;
+  --l2: #ea74ba;
+  --l3: #9d98ff;
+  --gate: #ffb547;
+  --jev: #78b6ff;
+  --ok: #55cf8f;
+  --bad: #ff6f6b;
+  --warn: #ffb547;
+
+  --card: var(--panel);
+  --card-foreground: var(--ink);
+  --popover: #1b242e;
+  --popover-foreground: var(--ink);
+  --primary: var(--l1);
+  --primary-foreground: #08201e;
+  --secondary: var(--raise);
+  --secondary-foreground: var(--ink);
+  --muted: var(--raise);
+  --muted-foreground: var(--ink-3);
+  --accent: var(--raise);
+  --accent-foreground: var(--ink);
+  --destructive: var(--bad);
+  --border: var(--line);
+  --input: var(--line-2);
+  --ring: var(--l1);
+  --radius: 0.625rem;
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  html { @apply font-sans; height: 100%; }
+  body { @apply bg-background text-foreground; height: 100%; margin: 0; font-size: 13px; line-height: 1.5; font-feature-settings: "tnum" 1; -webkit-font-smoothing: antialiased; overflow: hidden; }
+  #root { height: 100%; }
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-thumb { background: #2f3b48; border-radius: 9px; border: 2px solid transparent; background-clip: padding-box; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  button { font: inherit; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
+}
+
+/* ── 루프 색 유틸: --c 를 바꾸면 .st/.kw/.beat 등이 같이 물든다 ─────── */
+@utility lane-l1 { --c: var(--l1); }
+@utility lane-l2 { --c: var(--l2); }
+@utility lane-l3 { --c: var(--l3); }
+@utility lane-gate { --c: var(--gate); }
+@utility lane-jev { --c: var(--jev); }
+@utility lane-ok { --c: var(--ok); }
+@utility lane-bad { --c: var(--bad); }
+@utility lane-warn { --c: var(--warn); }
+@utility lane-ink { --c: var(--ink-3); }
+
+/* ── 공통 패널 ─────────────────────────────────────────────── */
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); min-width: 0; min-height: 0; }
+.panel-h { display: flex; align-items: baseline; gap: 10px; padding: 12px 16px 8px; min-width: 0; }
+.panel-h h2 { font-size: 13.5px; font-weight: 700; letter-spacing: -0.01em; margin: 0; white-space: nowrap; }
+.panel-h .d { font-size: 11.5px; color: var(--ink-3); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kw { font-weight: 760; color: var(--c, var(--ink)); }
+.page { height: 100%; min-height: 0; overflow: auto; padding: 20px 24px 40px; }
+.page-h { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.page-h h1 { font-size: 22px; font-weight: 760; letter-spacing: -0.02em; margin: 0; }
+.page-h p { margin: 4px 0 0; color: var(--ink-3); font-size: 12.5px; max-width: 80ch; }
+.muted { color: var(--ink-3); }
+
+/* ── 코드 뷰 ─────────────────────────────────────────────── */
+.code { font-family: var(--font-mono); font-size: 11.5px; line-height: 1.55; background: #0e1318; border: 1px solid var(--line); border-radius: var(--radius-md); padding: 10px 12px; overflow: auto; white-space: pre; color: #d6dee7; tab-size: 4; }
+.code .tk-k { color: #c792ea; }
+.code .tk-s { color: #c3e88d; }
+.code .tk-c { color: #5c6b7a; font-style: italic; }
+.code .tk-n { color: #f78c6c; }
+.code .tk-f { color: #82aaff; }
+.code .dl { min-height: 1.55em; padding: 0 6px; margin: 0 -6px; white-space: pre; }
+.code .dl.add { background: color-mix(in oklab, var(--ok) 16%, transparent); color: #c9f3dd; }
+.code .dl.del { background: color-mix(in oklab, var(--bad) 16%, transparent); color: #ffd6d4; }
+.code .dl.hunk { color: var(--jev); }
+.code .caret { display: inline-block; width: 7px; height: 1.1em; background: var(--l1); vertical-align: text-bottom; animation: blink 0.9s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* ── 확률 막대 ─────────────────────────────────────────────── */
+.jv { display: grid; grid-template-columns: 96px 1fr 44px; align-items: center; gap: 10px; font-size: 12px; color: var(--ink-2); }
+.jv .bar { height: 10px; border-radius: 5px; background: var(--raise); overflow: hidden; }
+.jv .bar i { display: block; height: 100%; width: 0; border-radius: 5px; background: var(--ink-3); transition: width 0.7s cubic-bezier(.2,.8,.2,1); }
+.jv.sel .bar i { background: var(--jev); }
+.jv.sel { color: var(--ink); font-weight: 650; }
+.jv.esc .bar i { background: var(--warn); }
+.jv .v { text-align: right; font-family: var(--font-mono); font-size: 11px; }
+
+/* ── 표 ─────────────────────────────────────────────────── */
+.tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+.tbl th { text-align: left; font-weight: 600; color: var(--ink-3); padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.tbl td { padding: 6px 8px; border-bottom: 1px solid color-mix(in oklab, var(--line) 60%, transparent); vertical-align: top; }
+.tbl td.num, .tbl th.num { text-align: right; font-family: var(--font-mono); font-size: 11.5px; white-space: nowrap; }
+.tbl tr.bad td { color: #ffd6d4; background: color-mix(in oklab, var(--bad) 8%, transparent); }
+.tbl tr.ok td { background: color-mix(in oklab, var(--ok) 7%, transparent); }
+.tbl tr.warn td { color: #ffe9c6; }
+.tbl tr.clk { cursor: pointer; }
+.tbl tr.clk:hover td { background: var(--panel-2); }
+.tbl tr.sel td { background: color-mix(in oklab, var(--l1) 10%, transparent); }
+
+/* ── 상태 칩 ─────────────────────────────────────────────── */
+.st { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: color-mix(in oklab, var(--c, var(--ink-3)) 18%, transparent); color: var(--c, var(--ink-2)); white-space: nowrap; }
+.st i { width: 6px; height: 6px; border-radius: 50%; background: var(--c, var(--ink-3)); flex: none; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 12px; }
+.kv dt { color: var(--ink-3); }
+.kv dd { margin: 0; }
+
+/* ── 애니메이션 ───────────────────────────────────────────── */
+@keyframes flash-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.flash-in { animation: flash-in 0.35s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes beat { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--c, var(--l1)) 45%, transparent); } 60% { box-shadow: 0 0 0 9px color-mix(in oklab, var(--c, var(--l1)) 0%, transparent); } }
+.beat { animation: beat 1.5s ease-out infinite; }
+@keyframes glow { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+.glow { animation: glow 1.6s ease-in-out infinite; }
+@keyframes flow-x { from { background-position: 0 0; } to { background-position: 24px 0; } }
+.flowing { background-image: repeating-linear-gradient(90deg, var(--c, var(--l1)) 0 10px, transparent 10px 24px); background-size: 24px 100%; animation: flow-x 0.8s linear infinite; }
+@keyframes dash { to { stroke-dashoffset: -40; } }
+.dash-run { stroke-dasharray: 8 12; animation: dash 0.9s linear infinite; }
+@keyframes scanx { from { transform: translateX(0); } to { transform: translateX(144px); } }
+.scanbar { animation: scanx 0.9s ease-in-out 3 alternate; }
+@keyframes pop { 0% { transform: scale(.8); opacity: 0; } 60% { transform: scale(1.06); opacity: 1; } 100% { transform: scale(1); } }
+.pop { animation: pop .45s cubic-bezier(.2,.8,.2,1) both; }
+
+/* ── React Flow ─────────────────────────────────────────── */
+.react-flow { background: transparent; }
+.react-flow__attribution { display: none; }
+.react-flow__node { font-family: inherit; }
+.react-flow__handle { opacity: 0; width: 1px; height: 1px; min-width: 0; min-height: 0; border: 0; pointer-events: none; }
+.react-flow__controls { box-shadow: none; }
+.react-flow__controls button { background: var(--panel-2); border-bottom: 1px solid var(--line); color: var(--ink-2); fill: var(--ink-2); }
+.react-flow__controls button:hover { background: var(--raise); }
+.react-flow__edge.selected .react-flow__edge-path { stroke: var(--l1); }

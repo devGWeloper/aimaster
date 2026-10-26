@@ -28,17 +28,22 @@ from fastapi.staticfiles import StaticFiles  # noqa: E402
 from autoqual.story import Story  # noqa: E402
 from autoqual.system import System  # noqa: E402
 
-STATIC = Path(__file__).resolve().parent / "static"
+# 프론트엔드: ui/web (Vite + React + Tailwind + shadcn/ui) 빌드 결과물 dist/ 를 그대로 서빙한다.
+#   개발 시 `cd ui/web && npm run dev` (5173, /api 는 8765로 프록시) · 배포 시 `npm run build` → dist/ 커밋
+DIST = Path(__file__).resolve().parent / "web" / "dist"
 
 app = FastAPI(title="AutoQual Self-Evolving Agent")
-app.mount("/static", StaticFiles(directory=STATIC), name="static")
+if (DIST / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
+if (DIST / "fonts").exists():
+    app.mount("/fonts", StaticFiles(directory=DIST / "fonts"), name="fonts")
 
 
 @app.middleware("http")
-async def no_cache_static(request: Request, call_next):
-    """정적 파일(ES 모듈·CSS)은 항상 재검증 — 빌드 없이 수정하므로 브라우저가 옛 모듈을 쓰지 않게 한다."""
+async def no_cache_index(request: Request, call_next):
+    """index.html 은 항상 재검증 (해시 붙은 assets/* 는 장기 캐시 가능)."""
     resp = await call_next(request)
-    if request.url.path.startswith("/static") or request.url.path == "/":
+    if request.url.path == "/" or request.url.path.startswith("/api/"):
         resp.headers["Cache-Control"] = "no-cache, must-revalidate"
     return resp
 
@@ -61,7 +66,16 @@ def J(x):
 
 @app.get("/")
 def index():
-    return FileResponse(STATIC / "index.html")
+    if not (DIST / "index.html").exists():
+        return JSONResponse({"detail": "프론트엔드 빌드가 없습니다. ui/web 에서 `npm install && npm run build` 를 실행하세요."}, status_code=503)
+    return FileResponse(DIST / "index.html")
+
+
+@app.get("/api/health")
+def health():
+    S = sysm()
+    return J({"ok": True, "clock": S.clock.now().isoformat(sep=" "), "story_running": STORY.running, "llm": S.llm.describe().get("mode"),
+              "frontend": (DIST / "index.html").exists()})
 
 
 # ── 스냅샷 ─────────────────────────────────────────────────────────
@@ -221,6 +235,14 @@ def reports(kind: str | None = None):
     st = sysm().store
     sql = "SELECT report_id, kind, title, ts FROM reports" + (" WHERE kind=?" if kind else "") + " ORDER BY ts DESC"
     return J(st.all(sql, (kind,) if kind else ()))
+
+
+@app.get("/api/reports/full")
+def reports_full(limit: int = 80, kind: str | None = None):
+    """리포트 전문 목록 (진화 사건 피드용) — N+1 호출 대신 한 번에."""
+    st = sysm().store
+    sql = "SELECT * FROM reports" + (" WHERE kind=?" if kind else "") + " ORDER BY ts DESC LIMIT ?"
+    return J(st.all(sql, (kind, limit) if kind else (limit,)))
 
 
 @app.get("/api/report/{rid}")
