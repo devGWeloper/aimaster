@@ -23,6 +23,31 @@ from .tools import P, RunContext, S
 
 D = datetime
 
+# 챕터별 업무 상황 — 화면에서 "이 장면이 현장의 어떤 일인지"를 설명하는 문장 (UI 시나리오 패널·챕터 안내에 표시)
+CHAPTER_BIZ = {
+    "ch00": "개발자가 만든 기본 Agent 4종으로 출발합니다. 엔지니어가 직접 오가던 세 시스템(기준정보·FDC 로그·레거시 Qual DB)을 Agent 하나씩 맡고, "
+            "Super Agent가 이들을 지휘합니다. 여기서부터 Agent가 스스로 늘고, 고치고, 진화합니다.",
+    "ch01": "운영 투입 전, 레거시 DB에 쌓인 3년치 Qual 이력 3,000건을 시간순으로 다시 풀어 봅니다. 당시 판단과 실제 결과를 채점하며 숙련자 머릿속에만 있던 "
+            "Seasoning 노하우를 교훈(Lesson)으로 뽑아냅니다. 그 시점 이후 데이터는 Time-Travel Guard가 막아 '미래를 보고 맞히는' 일이 없습니다.",
+    "ch02": "ETCH-07 B챔버 Wet Clean PM이 끝나 장비가 멈춰 있습니다. 엔지니어가 Spec 조회·FDC 확인·과거 이력 조회에 1.5~2시간 쓰던 준비를 요청 한 줄로 대신하고, "
+            "Seasoning 웨이퍼를 몇 장 돌릴지 근거와 함께 추천합니다. 측정 → 결정적 코드 판정 → 사람 승인을 거쳐 장비가 생산에 복귀합니다.",
+    "ch03": "'Qual Fail이 교체 부품 사용시간과 관계있나?' — 기존 기능에 없는 질문입니다. 예전이면 IT 개발 요청 후 수 주를 기다리며 엑셀로 수작업했을 일을, "
+            "Agent Factory가 새 Agent(부품이력)를 코드로 직접 만들어 수 분 안에 답합니다.",
+    "ch04": "장비 SW가 v5.2로 업데이트되며 로그 포맷이 바뀌었습니다. 기존 자동화라면 조용히 멈추거나, 더 나쁘게는 틀린 값을 냈을 상황입니다. "
+            "Agent는 추측하지 않고 '확인 불가'로 답한 뒤 자기 파서 코드를 직접 고치고, 같은 문제를 가진 다른 Agent까지 연쇄 복구합니다.",
+    "ch05": "엔지니어가 특정 부품 Lot이 어느 챔버에 장착됐는지 한 번 묻습니다. Agent가 새로 만들어져 답하지만 이후로는 쓰이지 않아, 나중에 SC-009에서 폐기 대상이 됩니다.",
+    "ch06": "시험 운영(probation) 기간 동안 문제없이 쓰인 부품이력 Agent를 운영자가 검토해 정식 승격합니다. Agent가 만든 기능도 사람 승인 없이는 정식이 되지 않습니다.",
+    "ch07": "운영 한 달 동안 엔지니어가 Agent 추천 매수를 바꾼 기록(Override)과 실제 Qual 결과가 쌓였습니다. 결과로 뒷받침된 수정만 골라 학습해, "
+            "Focus Ring 사용시간까지 반영하도록 판단 로직을 새 버전으로 진화시킵니다.",
+    "ch08": "Agent가 늘면서 같은 FDC 파싱 코드가 여러 곳에 중복되고 응답이 느려졌습니다. 공용 스킬 추출·병합·캐시안을 평가 하네스로 채점하고, "
+            "Shadow로 24시간 병행 검증한 뒤에만 운영에 올립니다.",
+    "ch09": "레거시 DB 이관 때 일부 기간 데이터가 아예 적재되지 않았습니다. 고칠 수 없는 문제에 예산을 낭비하지 않고 조기 중단해 사람에게 넘기고, "
+            "승격 후 Shadow 결과가 어긋나면 관련 Agent를 한꺼번에 이전 버전으로 되돌립니다.",
+    "ch10": "Super Agent 자신도 진화합니다. 결과에 기여하지 않던 Agent 호출을 줄이고, 자주 쓰는 편성을 템플릿으로 만들어 같은 일을 더 빠르고 싸게 처리합니다.",
+    "ch11": "한 번 만든 기능이 쌓이기만 하면 유지보수 비용이 계속 늘어납니다. 쓰이지 않거나 다른 Agent로 대체된 Agent를 의존성 분석 → 대체 검증 → 폐기 유예 → "
+            "사람 승인 → 아카이브 보관 순서로 안전하게 정리합니다.",
+}
+
 
 class Story:
     def __init__(self, sysm):
@@ -58,7 +83,7 @@ class Story:
     def wait_approval(self, apr: dict, auto_note: str = "") -> dict:
         rid = apr["request_id"]
         if (self.sys.store.kv_get("approval_mode", "manual")) == "auto":
-            self.sys.bus.emit("approval_countdown", request_id=rid, seconds=4)
+            self.sys.bus.emit("approval_countdown", request_id=rid, seconds=round(self.sys.bus.scaled(4.0)))
             self.sys.bus.pace(4.0)
             row = self.sys.store.one("SELECT * FROM approvals WHERE request_id=?", (rid,))
             if row["status"] == "pending":
@@ -80,7 +105,7 @@ class Story:
 
     def status(self) -> dict:
         st = self.sys.store.kv_get("story", {}) or {}
-        return {"chapters": [{"id": c[0], "title": c[1], "date": c[2], "desc": c[3],
+        return {"chapters": [{"id": c[0], "title": c[1], "date": c[2], "desc": c[3], "biz": CHAPTER_BIZ.get(c[0], ""),
                               "done": c[0] in (st.get("done") or []), "checkpoint": self.sys.has_checkpoint(c[0])} for c in self.chapters],
                 "current": self.current, "running": self.running, **st}
 
@@ -117,7 +142,7 @@ class Story:
             for i in range(start, end + 1):
                 cid, title, date, desc, fn = self.chapters[i]
                 self.current = cid
-                self.sys.bus.emit("chapter", id=cid, title=title, date=date, desc=desc, phase="start")
+                self.sys.bus.emit("chapter", id=cid, title=title, date=date, desc=desc, biz=CHAPTER_BIZ.get(cid, ""), phase="start")
                 fn()
                 self.sys.flush()
                 self._mark_done(cid)
@@ -138,6 +163,128 @@ class Story:
     def stop(self):
         self.sys.bus.stop_flag = True
         self.sys.bus.paused.set()
+
+    # ── 시연 — 시나리오 하나를 질문·사건 단위 단계로 진행 ─────────────────
+    #   1단계는 매번 시작 직전 체크포인트로 복원(같은 결과 재현), 이후 단계는 이어서 진행.
+    #   필요한 체크포인트(ch02·ch03·ch06·ch10)는 prepare_demos()가 최대 속도 완주로 만든다.
+    def demos(self):
+        return {
+            "grow": ("ch03", [self._d_grow_ask, self._d_grow_again]),
+            "heal": ("ch04", [self._d_heal_fault, self._d_heal_ask]),
+            "evolve": ("ch07", [self._d_evo_ops, self._d_evo_night, self._d_evo_ask]),
+            "retire": ("ch11", [self._d_ret_run, self._d_ret_again]),
+        }
+
+    def demo_ready(self) -> dict:
+        ids = [c[0] for c in self.chapters]
+        return {k: self.sys.has_checkpoint(ids[ids.index(ch) - 1]) for k, (ch, _) in self.demos().items()}
+
+    def _roster(self):
+        return [{"agent_id": a["agent_id"], "kind": a["kind"], "version": a["active_version"], "status": a["status"]}
+                for a in self.sys.registry.snapshot()["agents"]]
+
+    def run_demo(self, demo_id: str, step: int) -> bool:
+        ch, steps = self.demos()[demo_id]
+        if self.running or not (0 <= step < len(steps)):
+            return False
+        if step == 0:
+            mode = self.sys.store.kv_get("approval_mode", "manual")
+            if not self.jump(ch):
+                return False
+            self.sys.store.kv_set("approval_mode", mode)   # 체크포인트(준비 때 자동 승인)가 아니라 지금 설정을 유지
+        self.running = True
+        self.current = f"demo:{demo_id}"
+        self.sys.bus.stop_flag = False
+
+        def go():
+            try:
+                if step == 0:
+                    self.sys.bus.emit("demo", id=demo_id, step=0, phase="baseline", roster=self._roster(), clock=S(self.sys.clock.now()))
+                self.sys.bus.emit("demo", id=demo_id, step=step, phase="start")
+                steps[step]()
+                self.sys.flush()
+                self.sys.bus.emit("demo", id=demo_id, step=step, phase="done", roster=self._roster())
+            except StoryStopped:
+                self.sys.bus.emit("demo", id=demo_id, step=step, phase="stopped")
+            except Exception as e:  # noqa: BLE001
+                self.sys.bus.emit("demo", id=demo_id, step=step, phase="error", error=str(e))
+                self.sys.bus.emit("toast", level="error", text=traceback.format_exc()[-600:])
+            finally:
+                self.running = False
+                self.current = None
+        self.thread = threading.Thread(target=go, daemon=True, name="demo")
+        self.thread.start()
+        return True
+
+    def prepare_demos(self) -> bool:
+        """시연 준비 — 초기 상태부터 SC-008까지 최대 속도·자동 승인으로 완주해 체크포인트를 만든 뒤 설정을 되돌린다."""
+        if self.running:
+            return False
+        bus, kv = self.sys.bus, self.sys.store
+        speed, mode = bus.speed, kv.kv_get("approval_mode", "manual")
+
+        def go():
+            try:
+                bus.speed = 0
+                self.jump("ch00")                      # 저장소 초기화 — 승인 모드도 지워지므로 그 뒤에 설정
+                kv.kv_set("approval_mode", "auto")
+                bus.emit("demo", id="prepare", step=0, phase="start")
+                self._run("ch00", "ch10")
+                bus.emit("demo", id="prepare", step=0, phase="done", ready=self.demo_ready())
+            finally:
+                bus.speed = speed
+                kv.kv_set("approval_mode", mode)
+                self.running = False
+        bus.stop_flag = False
+        self.running = True
+        self.thread = threading.Thread(target=go, daemon=True, name="demo-prepare")
+        self.thread.start()
+        return True
+
+    def _d_grow_ask(self):
+        self.sys.clock.set(D(2026, 9, 10, 10, 30))
+        self.say("공정 담당자의 질문: 기존 기능(기준정보·로그·이력)으로는 답할 수 없는 분석입니다.")
+        self.runner.submit("지난 분기 ETCH 장비에서 Qual Fail 났던 건들, 교체 부품 사용시간이랑 관계 있는지 분석해줘", source="user")
+
+    def _d_grow_again(self):
+        self.sys.clock.set(D(2026, 9, 10, 15, 0))
+        self.say("다른 엔지니어가 비슷한 질문을 합니다 — 이번에는 새로 만들지 않고 방금 추가된 기능을 바로 씁니다.")
+        self.runner.submit("지난 분기 ETCH 장비 Qual Fail이랑 Focus Ring 사용시간 관계 다시 분석해줘", source="user")
+
+    def _d_heal_fault(self):
+        self.sys.clock.set(D(2026, 9, 17, 10, 32))
+        f = self.sys.world.inject_fault("sw_v52", list(C.V52_EQPS), {"from": "2026-09-17 00:00:00", "tz": {"CVD-12": "", "CVD-03": "+09:00", "CVD-08": "+09:00"}},
+                                        ts=self.sys.clock.now())
+        self.sys.bus.emit("fault", fault_id=f["fault_id"], type="sw_v52", target=list(C.V52_EQPS),
+                          text="장비 SW v5.2 업데이트 (CVD-03·08·12) — FDC 로그 컬럼 7개 변경, 시간 형식 YYYYMMDDhhmmss → ISO8601")
+        self.say("현장 변화: CVD 장비 3대의 SW가 업데이트되어 로그 형식이 바뀌었습니다. 아무도 코드를 고치지 않은 상태입니다.")
+
+    def _d_heal_ask(self):
+        self.sys.clock.set(D(2026, 9, 17, 10, 40))
+        self.say("SW가 바뀐 CVD-12에서 AutoQual 요청이 들어옵니다.")
+        self.runner.submit("CVD-12 A챔버 RF Generator 교체했어. AutoQual 해줘", source="user", meas_delay=1.0, heal_wait=True)
+
+    def _d_evo_ops(self):
+        self.say("한 달 운영: 엔지니어들이 추천 매수를 바꾼 기록(Override)과 실제 Qual 결과가 쌓입니다.")
+        self.background(D(2026, 10, 20, 1, 0), "운영 4~7주차")
+        ops = [x["content"] for x in self.sys.memory.cases(mode="ops")]
+        grp = [c for c in ops if c["eqp_model"] == "ETX-300" and c["pm_type"] == "WET_CLEAN"]
+        ov = sum(1 for c in grp if c.get("override"))
+        self.say(f"ETX-300 Wet Clean {len(grp)}건 중 엔지니어 Override {ov}건 — 추천이 현장 판단과 자주 어긋납니다.", level="warn")
+
+    def _d_evo_night(self):
+        self._sc007_evolve()
+
+    def _d_evo_ask(self):
+        self._sc007_followup()
+
+    def _d_ret_run(self):
+        self.ch_sc009()
+
+    def _d_ret_again(self):
+        self.sys.clock.set(self.sys.clock.now() + timedelta(days=1))
+        self.say("정리된 기능이 다시 필요해졌습니다 — 새로 만들기 전에 보관함(아카이브)에서 먼저 찾습니다.")
+        self.runner.submit("FRL-2408-117 Lot Focus Ring 장착된 챔버 다시 추적해줘", source="user")
 
     def jump(self, cid: str) -> bool:
         """해당 챕터 직전 체크포인트로 복원 (이후 start 로 그 챕터부터 실행)."""
@@ -333,18 +480,22 @@ class Story:
 
     def ch_sc007(self):
         self.background(D(2026, 10, 20, 1, 0), "운영 4~7주차")
+        if self._sc007_evolve():
+            self._sc007_followup()
+
+    def _sc007_evolve(self) -> bool:
         self.sys.clock.set(D(2026, 10, 20, 2, 0))
         run_id = self.sys.store.next_id("E-", 2)
         self.say(f"SC-007 [L3 Evolve 야간] 운영 7주간 경험 메모리 분석 — 판단 진화 #{run_id}")
         out = self.ops.judgment_evolve(D(2026, 9, 1), D(2026, 10, 19, 23, 59), run_id)
         if not out.get("best"):
             self.say("채택 후보 없음 — 아카이브 보관", level="warn")
-            return
+            return False
         self.sys.clock.set(D(2026, 10, 21, 9, 30))
         row = self.wait_approval(out["approval"], "백테스트 결과 검토 — Focus Ring 구간 보정 채택")
         if row["status"] != "approved":
             self.say("운영자 반려 — 진화안 hold 보관, 반려 사유를 다음 진화 재료로 기록", level="warn")
-            return
+            return False
         ch, new = self.ops.adopt_judgment(out, row["approver"])
         self.say(f"반영: " + ", ".join(f"{c['agent_id']} {c['from']} → {c['to']}" for c in ch) + f" · 교훈 등록 {', '.join(new)} · 가설 검증 완료 · 미해결 군집 해소",
                  level="done")
@@ -353,6 +504,9 @@ class Story:
         ho = self.sys.harness.evaluate(cfg, self.ops.heldout_cases(), "after-sc007")
         self.sys.store.kv_set("kpi_fp_after", ho["first_pass_rate"])
         self.sys.store.kv_set("kpi_after_sc007", {k: ho[k] for k in ("accuracy", "first_pass_rate", "wafer_usage", "rec_error")})
+        return True
+
+    def _sc007_followup(self):
         self.background(D(2026, 10, 22, 13, 20), "판단 진화 후")
         self.sys.clock.set(D(2026, 10, 22, 13, 30))
         self.say("다음 요청: 진화된 로직이 어떤 경험에서 바뀌었는지 근거와 함께 추천합니다.")

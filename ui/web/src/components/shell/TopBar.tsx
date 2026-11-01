@@ -1,5 +1,5 @@
 // 상단 제어바 — 브랜드 · 가상 시각 · 모드 칩 · Autopilot 제어(재생/일시정지/정지/속도/승인 모드)
-import { Pause, Play, Square } from 'lucide-react';
+import { CircleHelp, Pause, Play, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -7,6 +7,7 @@ import { useApp } from '@/store/store';
 import { vdate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
+// 1× = 발표·설명 속도 (서버가 연출 대기를 narrate 배율만큼 늘림). 빠르게 넘기려면 2×·4×
 const SPEEDS = [[0.5, '0.5×'], [1, '1×'], [2, '2×'], [4, '4×'], [0, '최대']] as const;
 
 export default function TopBar() {
@@ -21,6 +22,7 @@ export default function TopBar() {
   const playLabel = running ? 'Autopilot 실행 중' : nDone >= nAll && nAll ? 'Autopilot 처음부터' : nDone ? 'Autopilot 이어서' : 'Autopilot 시작';
   const replay = snap?.replay?.state === 'running';
   const llm = snap?.llm || { mode: 'offline' };
+  const setIntro = useApp((s) => s.setIntro);
 
   return (
     <header className="col-span-2 flex items-center gap-5 border-b border-line bg-panel px-4">
@@ -34,6 +36,9 @@ export default function TopBar() {
           <div className="text-[15px] font-extrabold tracking-tight">AutoQual</div>
           <div className="text-[11px] text-ink-3">Self-Evolving Agent</div>
         </div>
+        <Button variant="outline" size="sm" className="ml-1 gap-1.5 border-l1/50 text-[12px] text-l1 hover:text-ink" onClick={() => setIntro(true)}>
+          <CircleHelp className="size-3.5" /> 이 Agent는 무엇을 하나요?
+        </Button>
       </div>
       <div className="flex items-baseline gap-2 border-l border-line pl-5">
         <span className="text-[12px] text-ink-2">{d}</span>

@@ -1,4 +1,4 @@
-// Now 패널 — 시나리오 · 요청 · "지금 Agent가 하는 일"(큰 자막) · 루프 위치 · Agentic 지표 · 행동 일지
+// Now 패널 — 시나리오(업무 상황) · 요청 · "지금 Agent가 하는 일"(큰 자막) · 루프 위치 · Agentic 지표 · 행동 일지
 import { useEffect, useRef } from 'react';
 import { useApp } from '@/store/store';
 import { LANE_KO } from '@/lib/ko';
@@ -29,6 +29,7 @@ export default function NowPanel() {
     ['사람 승인', live.counters.human, 'gate'], ['무승인 변경', 0, 'ok'],
   ];
   const m = /^(SC-\d+)\s+(.*)$/.exec(live.chapter?.title || '');
+  const biz = live.chapter?.biz || snap?.story?.chapters.find((c) => c.id === live.chapter?.id)?.biz;
 
   return (
     <section className="flex min-h-0 flex-col bg-panel">
@@ -39,7 +40,13 @@ export default function NowPanel() {
           <span>{live.chapter?.date || ''}</span>
           <span className="truncate font-semibold text-ink-2">{m ? m[2] : live.chapter?.title || ''}</span>
         </div>
-        <p className="mt-1.5 line-clamp-2 text-[12px] leading-snug text-ink-2">{live.story || '상단 Autopilot을 누르면 Agent가 시나리오(SC-006 → SC-009)를 스스로 수행합니다. 오른쪽 대화창에서 엔지니어처럼 직접 요청할 수도 있습니다.'}</p>
+        {biz && (
+          <div className="mt-2 rounded-lg border border-line bg-bg/50 px-3 py-2">
+            <div className="text-[10.5px] font-bold tracking-wide text-l1">업무 상황</div>
+            <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink">{biz}</p>
+          </div>
+        )}
+        <p className="mt-1.5 line-clamp-2 text-[12px] leading-snug text-ink-3">{live.story || '상단 Autopilot을 누르면 Agent가 시나리오(SC-006 → SC-009)를 스스로 수행합니다. 오른쪽 대화창에서 엔지니어처럼 직접 요청할 수도 있습니다. 처음이라면 왼쪽 위 “이 Agent는 무엇을 하나요?”부터.'}</p>
       </div>
 
       {/* 지금 하는 일 */}

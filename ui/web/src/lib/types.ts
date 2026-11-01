@@ -13,7 +13,7 @@ export interface Ev {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AnyEv = Ev & Record<string, any>;
 
-export interface Chapter { id: string; title: string; date: string; desc: string; done: boolean; checkpoint: boolean }
+export interface Chapter { id: string; title: string; date: string; desc: string; biz?: string; done: boolean; checkpoint: boolean }
 export interface Agent {
   agent_id: string; kind: 'agent' | 'skill'; name_ko?: string; protected?: boolean;
   status: 'active' | 'probation' | 'deprecated' | 'retired' | 'candidate' | string;
@@ -28,7 +28,7 @@ export interface Approval { request_id: string; kind: string; title: string; pay
 export interface FabChamber { chamber_id: string; state: 'RUN' | 'DOWN' | 'QUAL' | 'APPROVAL' | string; since: string; note?: string; thread_id?: string | null }
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export interface Snapshot {
-  clock: string; speed: number; paused: boolean; approval_mode: 'manual' | 'auto';
+  clock: string; speed: number; narrate?: number; paused: boolean; demos?: Record<string, boolean>; approval_mode: 'manual' | 'auto';
   llm: { mode: string; base_url?: string; [k: string]: any }; jev: { model: string; calls: number };
   story: { chapters: Chapter[]; current: string | null; running: boolean; done?: string[]; last?: string };
   registry: { agents: Agent[] }; approvals: Approval[]; faults: any[]; replay: any; replay_rows: any[]; after_sc007: any;

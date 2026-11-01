@@ -7,3 +7,6 @@ config/jev.json
 .venv/
 ui/web/node_modules/
 ui/web/node_modules/.tmp/
+# 도식 렌더러 임시 설정
+docs/diagrams/.mmdc-config.json
+docs/diagrams/.puppeteer.json

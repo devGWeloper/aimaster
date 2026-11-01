@@ -2,6 +2,7 @@
 
 emit(type, **data)  : 이벤트 기록 + 구독자 전달
 pace(seconds)       : 스토리 재생 속도에 맞춘 시각 연출용 대기 (speed=0 이면 생략)
+                      narrate 배율만큼 늘려 발표·설명 속도로 재생 (bulk=True 인 대량 처리 대기는 제외)
 """
 from __future__ import annotations
 
@@ -20,6 +21,7 @@ class EventBus:
         self._subs: list[queue.Queue] = []
         self._lock = threading.Lock()
         self.speed = 1.0           # 0 = 최대 속도(연출 대기 없음)
+        self.narrate = 2.5         # 설명용 감속 배율 — 1× 에서도 단계 하나하나를 눈으로 따라갈 수 있게
         self.paused = threading.Event()
         self.paused.set()          # set = 진행 중
         self.clock_fn = lambda: None
@@ -68,12 +70,16 @@ class EventBus:
     def mute_depth(self) -> int:
         return getattr(self._local, "depth", 0)
 
-    def pace(self, seconds: float):
+    def scaled(self, seconds: float, bulk: bool = False) -> float:
+        """연출 대기의 실제 벽시계 길이 (초)."""
+        return seconds * (1.0 if bulk else self.narrate) / self.speed if self.speed else 0.0
+
+    def pace(self, seconds: float, bulk: bool = False):
         self.paused.wait()
         if self.stop_flag:
             raise StoryStopped()
         if self.speed and seconds > 0 and not self.mute_depth:
-            end = time.time() + seconds / self.speed
+            end = time.time() + self.scaled(seconds, bulk)
             while time.time() < end:
                 if self.stop_flag:
                     raise StoryStopped()
@@ -102,7 +108,7 @@ class _NullBus(EventBus):
     def emit(self, etype, force=False, **data):
         return None
 
-    def pace(self, seconds):
+    def pace(self, seconds, bulk=False):
         return None
 
 

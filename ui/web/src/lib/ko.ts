@@ -11,6 +11,45 @@ export const AGENT_DESC: Record<string, string> = {
   chamber_trend_agent: 'PM 사이클 간 추이', part_history_agent: '교체 부품 사용시간 분석', lot_trace_agent: '부품 Lot 장착 추적',
   legacy_sql_toolkit: '약어 컬럼·코드값 SQL', code_value_resolver: '미문서화 코드값 해석', seasoning_pass_curve: 'Seasoning 매수와 Pass 곡선', fdc_toolkit: 'SW 버전별 FDC 파서',
 };
+// 업무 관점 — 각 Agent가 엔지니어 대신 답하는 질문과 그 답을 찾는 데이터 출처 (편성 맵 노드에 표시)
+export const AGENT_BIZ: Record<string, { q: string; src: string }> = {
+  super_agent: { q: '엔지니어 요청 한 줄을 해석해 필요한 Agent를 골라 부르고, 결과를 모아 추천안으로 답합니다', src: '요청 · 경험 메모리' },
+  spec_agent: { q: '이 PM 뒤에 어떤 Qual 항목·Spec·Seasoning 기준을 따라야 하나?', src: '기준정보 시스템' },
+  log_agent: { q: 'PM 뒤 챔버 상태가 정상으로 돌아왔나? 위험 신호는?', src: 'FDC 센서 · 알람 로그' },
+  legacy_agent: { q: '같은 챔버·PM에서 과거엔 몇 매 돌려 통과했나?', src: '레거시 Qual 이력 DB' },
+  part_history_agent: { q: '교체 부품 사용시간이 Qual Fail과 관계있나?', src: '부품 교체 이력' },
+  chamber_trend_agent: { q: 'PM 사이클마다 챔버가 어떻게 drift하나?', src: 'FDC · Qual 이력' },
+  lot_trace_agent: { q: '문제 부품 Lot이 어느 챔버에 장착됐나?', src: '부품 Lot 이력' },
+  legacy_sql_toolkit: { q: '약어 컬럼·코드값을 풀어 SQL 조회', src: '공용 스킬' },
+  code_value_resolver: { q: '문서에 없는 코드값의 의미 해석', src: '공용 스킬' },
+  seasoning_pass_curve: { q: 'Seasoning 매수별 1차 Pass 확률', src: '공용 스킬' },
+  fdc_toolkit: { q: '장비 SW 버전별 FDC 로그 파싱', src: '공용 스킬' },
+};
+// 포커스 카드 "업무 관점" — 지금 보이는 장면이 현장에서 왜 중요한지 한 줄
+export const FOCUS_WHY: Record<string, string> = {
+  request: '엔지니어는 요청 한 줄만 씁니다. 예전엔 기준정보·FDC·레거시 DB 세 시스템을 직접 오가며 1.5~2시간 준비하던 일입니다.',
+  parse: '요청에서 장비·챔버·PM 종류를 정확히 뽑아야 어떤 Spec과 과거 이력을 볼지 정해집니다.',
+  memory: 'Zero-Hallucination 메모리 — RAG 유사도 검색 대신 장비 모델·PM·시점 키로 정확히 조회합니다. 다른 장비 사례가 섞이지 않고, 근거마다 원천 이력이 인용됩니다.',
+  route: '어떤 Agent를 부를지 정하는 반복 분기는 LLM 대신 보정 확률 모델(Jev)이 빠르고 싸게 판단합니다.',
+  jev: '어떤 Agent를 부를지 같은 반복 분기는 LLM 대신 보정 확률 모델(Jev)이 빠르고 싸게 판단합니다. 확률이 낮으면 사람·LLM에 넘깁니다.',
+  code: 'JSON 툴 호출 대신 Python 코드를 행동으로 씁니다(CodeAct). 그래서 Agent가 기능을 직접 만들고 고칠 수 있습니다. 실행은 샌드박스 안에서만.',
+  agent: 'Agent가 담당 시스템에서 실제로 가져온 값입니다. 값 범위·변화율 사후 검증을 통과해야 답에 쓰이고, 아니면 "확인 불가"로 표시합니다.',
+  judge: 'Pass/Fail은 장비 Up과 직결되므로 LLM이 아니라 결정적 코드(judge_qual)가 Spec과 비교해 판정합니다. 같은 입력이면 항상 같은 결과.',
+  approval: '장비 상태 변경(Down → Up)은 Agent가 아무리 확신해도 사람이 승인합니다. 무승인 변경 0건이 불변 규칙입니다.',
+  response: '추천 매수와 근거(교훈·과거 사례·센서 상태)를 함께 제시해 엔지니어가 검토하고 Override할 수 있게 합니다.',
+  version: 'Agent의 소스 코드가 바뀐 순간입니다. 모든 변경은 버전·Lineage로 남고 언제든 되돌릴 수 있습니다.',
+  candidate: '진화 후보는 루프가 손댈 수 없는 평가 하네스로만 채점합니다. 검증셋(Held-out) 성능이 떨어지면 채택하지 않습니다.',
+  tests: '적대적 자율 검증 — 자기 코드를 공격하는 엣지 케이스(단위 혼재·미등록 코드·경계일)를 스스로 만들어 통과해야만 운영에 들어갑니다. 사람 없이 도는 CI/CD.',
+  fault: '현장에서 실제로 자주 일어나는 변화(장비 SW 업데이트, DB 이관, 단위 변경)를 재현한 장애입니다.',
+  thought: 'Agent가 다음 행동을 정하기 전에 스스로 확인하는 내용입니다.',
+  replay_case: '과거 건을 그 시점 데이터만으로 다시 풀어, Agent 판단을 당시 실제 결과와 채점합니다.',
+  replay_quarter: 'Walk-forward 사전 검증 — 분기마다 진화 → 다음 분기로 검증. 미래 데이터는 Time-Travel Guard가 차단해 과적합이 없고, 최근 6개월은 평가만 하는 Held-out입니다.',
+  report: '루프 하나가 끝날 때마다 무엇을, 왜 바꿨는지 리포트로 남겨 사람이 검토할 수 있습니다.',
+  registry: 'Agent의 생애(생성 → 시험 운영 → 정식 → 폐기 유예 → 폐기)는 Registry가 관리하고, 핵심 전환은 사람이 승인합니다.',
+  spec: '새 Agent를 만들기 전에 역할·입출력 명세부터 씁니다. 이어서 스키마를 탐색해 자기 코드를 공격할 엣지 케이스를 스스로 도출합니다.',
+  ops: '시연 사이의 시간에도 가상 엔지니어들의 AutoQual 요청을 Agent가 처리하며 경험이 쌓입니다. 이 경험이 진화의 재료입니다.',
+  policy: '평가 기준·예산·임계값은 루프 밖에 고정되어 Agent가 바꿀 수 없습니다. 사람만 바꿀 수 있습니다.',
+};
 export const ACTOR_KO: Record<string, string> = { super_agent: 'Super Agent', healer: 'Healer', factory: 'Agent Factory', evolver: 'Evolver', jev: 'Jev', sandbox: 'Sandbox',
   judge: 'judge_qual', human: '사람(운영자)', fab: 'Mock Fab', memory: '경험 메모리', harness: '평가 하네스', registry: 'Registry', world: '장애 주입기' };
 export const STATUS_KO: Record<string, string> = { active: '운영', probation: '시험 운영', deprecated: '폐기 유예', retired: '폐기', candidate: '후보' };

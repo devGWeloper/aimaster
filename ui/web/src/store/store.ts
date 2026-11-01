@@ -12,7 +12,7 @@ import { initialTrace, traceReduce, type TraceState } from './trace';
 import { initialBiz, bizReduce, type BizState } from './biz';
 import { initialEvolve, evolveReduce, type EvolveState } from './evolve';
 
-export type View = 'live' | 'loop' | 'evolve' | 'agents' | 'approvals' | 'fab';
+export type View = 'demo' | 'live' | 'loop' | 'evolve' | 'agents' | 'approvals' | 'fab';
 export interface Toast { id: number; text: string; level: string }
 
 export interface AppState {
@@ -30,6 +30,7 @@ export interface AppState {
   toasts: Toast[];
   countdown: { rid: string; seconds: number; at: number } | null;
   drawer: { kind: 'agent' | 'report' | 'archive'; id: string } | null;
+  intro: boolean;   // 업무 소개 창 (처음 접속 시 자동으로 한 번)
   // actions
   refresh: () => Promise<void>;
   refreshSoon: () => void;
@@ -41,6 +42,7 @@ export interface AppState {
   control: (path: string, body?: unknown) => Promise<void>;
   openDrawer: (kind: 'agent' | 'report' | 'archive', id: string) => void;
   closeDrawer: () => void;
+  setIntro: (open: boolean) => void;
   toggleSpan: (id: number) => void;
   toggleRun: (key: string) => void;
   setFocus: (id: number) => void;
@@ -48,7 +50,7 @@ export interface AppState {
   setCases: (cases: BizState['cases']) => void;
 }
 
-const REFRESH_ON = new Set(['version', 'registry', 'approval', 'chapter', 'fab', 'fault', 'policy', 'report', 'replay_quarter', 'kpi']);
+const REFRESH_ON = new Set(['version', 'registry', 'approval', 'chapter', 'fab', 'fault', 'policy', 'report', 'replay_quarter', 'kpi', 'demo']);
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 let toastSeq = 1;
 
@@ -62,7 +64,7 @@ function reduceAll(s: AppState, ev: AnyEv) {
 
 export const useApp = create<AppState>()((set, get) => ({
   snap: null,
-  view: (location.hash.replace('#', '') as View) || 'live',
+  view: (location.hash.replace('#', '') as View) || 'demo',
   connected: false,
   loadedAt: Date.now() / 1000,
   lastSeq: 0,
@@ -75,6 +77,7 @@ export const useApp = create<AppState>()((set, get) => ({
   toasts: [],
   countdown: null,
   drawer: null,
+  intro: (() => { try { return !sessionStorage.getItem('aq-intro'); } catch { return true; } })(),
 
   async refresh() {
     try {
@@ -150,6 +153,7 @@ export const useApp = create<AppState>()((set, get) => ({
   },
   openDrawer(kind, id) { set({ drawer: { kind, id } }); },
   closeDrawer() { set({ drawer: null }); },
+  setIntro(open) { set({ intro: open }); if (!open) { try { sessionStorage.setItem('aq-intro', '1'); } catch { /* 저장소 차단 */ } } },
   toggleSpan(id) { set(produce((s: AppState) => { const sp = s.trace.spans[id]; if (!sp) return; sp.open = !(sp.open || s.trace.autoOpenId === id); sp.pinned = sp.open; if (s.trace.autoOpenId === id && !sp.open) s.trace.autoOpenId = null; })); },
   toggleRun(key) { set(produce((s: AppState) => { const r = s.trace.runs[key]; if (r) r.open = !r.open; })); },
   setFocus(id) { set(produce((s: AppState) => { const f = s.live.acts.find((a) => a.id === id); if (f) s.live.focus = f; })); },
@@ -157,6 +161,6 @@ export const useApp = create<AppState>()((set, get) => ({
   setCases(cases) { set(produce((s: AppState) => { s.biz.cases = cases; s.biz.caseIds = cases.map((c) => c.request_id || c.id); s.biz.casesLoaded = true; })); },
 }));
 
-// 연출 속도 — 스토리 재생 속도에 맞춘 애니메이션 길이 (speed=0 이면 즉시)
-export function ms(base: number) { const v = Number(useApp.getState().snap?.speed ?? 1); return v ? base / Math.max(0.5, v) : 0; }
+// 연출 속도 — 스토리 재생 속도에 맞춘 애니메이션 길이 (speed=0 이면 즉시). narrate = 서버의 설명용 감속 배율
+export function ms(base: number) { const s = useApp.getState().snap; const v = Number(s?.speed ?? 1); return v ? (base * Number(s?.narrate ?? 1)) / Math.max(0.5, v) : 0; }
 export function dismissToast(id: number) { useApp.setState((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })); }

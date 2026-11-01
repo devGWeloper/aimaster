@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useApp } from '@/store/store';
 import type { Focus } from '@/store/live';
-import { AGENT_KO, LANE_KO, PM_KO, VKIND, agentKo } from '@/lib/ko';
+import { AGENT_KO, FOCUS_WHY, LANE_KO, PM_KO, VKIND, agentKo } from '@/lib/ko';
 import { hhmm, signed } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import CodeView from '@/components/common/CodeView';
@@ -23,7 +23,7 @@ export default function FocusCard() {
   const [tall, setTall] = useState(false);
   const live = !!f && !f.ev.backlog && Date.now() / 1000 - f.at < 40;
   return (
-    <div className={cn('flex flex-col border-t border-line bg-panel transition-[height]', tall ? 'h-[56%]' : 'h-[300px]')}>
+    <div className={cn('flex flex-col border-t border-line bg-panel transition-[height]', tall ? 'h-[60%]' : 'h-[270px]')}>
       <div className="flex items-center gap-2 px-4 pt-2.5 pb-1.5">
         {f ? (
           <>
@@ -35,6 +35,11 @@ export default function FocusCard() {
         <button type="button" className="ml-auto rounded p-1 text-ink-3 hover:bg-raise hover:text-ink" onClick={() => setTall((v) => !v)} aria-label="크기 조절">{tall ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}</button>
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-4 pb-4">
+        {f && FOCUS_WHY[f.kind] && (
+          <div className="mb-2.5 flex gap-2 rounded-md border-l-2 border-gate/70 bg-[color-mix(in_oklab,var(--gate)_7%,transparent)] px-2.5 py-1.5 text-[12px] leading-snug text-ink-2">
+            <b className="flex-none font-bold text-gate">업무 관점</b><span>{FOCUS_WHY[f.kind]}</span>
+          </div>
+        )}
         {f ? <Body f={f} live={live} /> : <div className="pt-6 text-center text-[12px] text-ink-3">Agent가 코드를 쓰고, 확률로 판단하고, 값을 가져오고, 판정하고, 승인을 기다리는 순간마다 여기 자세히 나옵니다.</div>}
       </div>
     </div>

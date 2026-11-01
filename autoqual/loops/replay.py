@@ -118,7 +118,7 @@ class ReplayEngine:
                     g = sysm.world.guard_stats
                     bus.emit("replay_progress", phase="case", done=done, total=len(reqs), quarter=q, replay_clock=case["request_ts"],
                              guard=g["queries_filtered"] + g["blocked_tables"])
-                    bus.pace(0.02)
+                    bus.pace(0.02, bulk=True)
             sysm.flush()
             m = self.quarter_metrics(q)
             heals = (sysm.store.scalar("SELECT COUNT(*) FROM reports WHERE kind='heal'") or 0) - heals0

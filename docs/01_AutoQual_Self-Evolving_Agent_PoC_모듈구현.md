@@ -2,7 +2,7 @@
 
 이번 PoC 단계에서 실제 코드로 구현된 핵심 기능들을 **동작 원리**와 **사용 기술** 중심으로 상세히 기술합니다.
 
-> 실행: `pip install -r requirements.txt` → `python -m mock_env.generate` → `python -m ui.server` → http://127.0.0.1:8765 에서 **Autopilot 시작**. 사내 LLM(`config/llm.json`) 미설정 시 오프라인 Playbook으로 결정적으로 재현되며, 아래 수치는 모두 이 모드의 실제 실행 결과다. 코드 위치는 `autoqual/`(에이전트 본체), `eval/`(루프 밖 고정 하네스·KPI), `mock_env/`(목업 Fab), `ui/`(운영 UI).
+> 실행: `pip install -r requirements.txt` → `python -m mock_env.generate` → `python -m ui.server` → http://127.0.0.1:8766 에서 **Autopilot 시작**. 사내 LLM(`config/llm.json`) 미설정 시 오프라인 Playbook으로 결정적으로 재현되며, 아래 수치는 모두 이 모드의 실제 실행 결과다. 코드 위치는 `autoqual/`(에이전트 본체), `eval/`(루프 밖 고정 하네스·KPI), `mock_env/`(목업 Fab), `ui/`(운영 UI).
 
 **1.1 에이전트 워크플로우 (Agent Workflow)**
 
@@ -22,13 +22,40 @@
 
 **1.3 데이터 및 메모리 (RAG & Context)**
 
-* **구현 기능:** RAG를 쓰지 않는 **구조화 경험 메모리**(case·lesson·skill)와 Agent Registry(Genome·Lineage)·진화 아카이브를 단일 저장소로 운영
+* **구현 기능:** **Zero-Hallucination 메모리 아키텍처** — 환각 리스크를 허용할 수 없는 AutoQual 특성상 RAG를 전략적으로 배제하고, 정확 키 DB 쿼리로만 근거를 가져오는 **구조화 경험 메모리**(case·lesson·skill)와 Agent Registry(Genome·Lineage)·진화 아카이브를 단일 저장소로 운영
 
 * **동작 원리:** `log_experience`가 실행 기록·엔지니어 Override와 사유·실제 Qual 결과를 case로 쌓으면, L3 Evolve가 case를 분석해 교훈(lesson: 장비 모델·PM 종류·적용 조건·보정량·원천 건수)을 만들고 만료시킨다. `retrieve_memory`는 장비 모델·PM 종류로 거르고 `before_ts`(리플레이 시각) 조건을 붙여 조회하며, 추천 근거에 `[교훈 L-0029 … 원천 이력 32건]`처럼 출처를 인용한다. 임베딩 유사도 검색 대신 결정적 필터를 쓴 이유는 근거 추적성, 재현성, Time-Travel Guard와의 일관성이다
 
 * **주요 기술:** SQLite(WAL) — 운영 시 같은 스키마로 PostgreSQL. 목업 데이터는 장비 30·챔버 90·PM 8종, Qual 이력 3,000건/3년이고 시드가 고정되어 있다(`mock_env/generate.py`). 약어 컬럼, 미문서화 코드값(PRT_CD 23종 중 8종 미등재), 폐기 테이블, 결측일, 소프트 삭제 중복, SW 버전별 로그 포맷(v3.8 / v4.x / v5.2)을 일부러 넣었다
 
 **1.4 CodeAct 런타임 · 샌드박스**
+
+<!-- diagram: poc-codeact -->
+```mermaid
+sequenceDiagram
+  participant SA as Super Agent
+  participant LLM as LLM (사내 API / Playbook)
+  participant SB as Sandbox
+  participant PX as 권한 프록시
+  participant AG as 하위 Agent
+  participant AU as 감사 로그
+  SA->>LLM: 실행 계획 코드 작성 요청
+  LLM-->>SA: Python 계획 코드
+  SA->>SB: execute(code)
+  SB->>SB: AST 정적 검사 · import 화이트리스트 · 금지 이름 · 금지 속성
+  alt 위반
+    SB-->>SA: SandboxViolation · 실행하지 않음
+  else 통과
+    SB->>PX: tools.call_agent(...)
+    PX->>AG: Genome에 선언된 도구만 허용
+    AG-->>PX: 지표 · 이력 · Spec
+    PX-->>SB: 결과
+    SB-->>SA: 실행 결과 + audit_id
+  end
+  SB->>AU: 코드 해시 · 도구 원장 · 차단 내역
+```
+> **그림 1.** CodeAct 실행 — 코드는 검사를 통과해야만 실행되고, 도구는 선언된 것만 쓴다 · 이미지: [SVG](diagrams/poc-codeact.svg) · [PNG](diagrams/poc-codeact.png)
+
 
 * **구현 기능:** Super Agent의 실행 계획, Healer의 진단·패치, Agent Factory의 스키마 탐색·Agent 생성, 그리고 각 Agent의 Genome까지 모두 **Python 코드로 작성하고 샌드박스에서 실행**한다
 
@@ -38,13 +65,35 @@
 
 **1.5 Loop Engineering (L1 Task / L2 Heal·Grow / L3 Evolve)**
 
+<!-- diagram: poc-loops -->
+```mermaid
+flowchart LR
+  subgraph LA["L1 Task · 요청 단위"]
+    a1["계획"] --> a2["코드"] --> a3["실행"] --> a4["관찰"] --> a1
+  end
+  subgraph LB["L2 Heal · Grow · 이벤트 단위 · 최대 5회 · 15분"]
+    b1["진단 · 명세"] --> b2["패치 · 생성"] --> b3["테스트"] --> b1
+  end
+  subgraph LC["L3 Evolve · 일 · 분기 단위"]
+    c1["지표 수집"] --> c2["변이"] --> c3["하네스 평가"] --> c4["선택 · 승인"] --> c5["Shadow · 승격"]
+  end
+  LA -->|"오류 · 처리 불가"| LB
+  LB -->|"새 버전 · 새 Agent"| LA
+  LA -->|"실행 기록 · 실제 Qual 결과 · Override"| LC
+  RP[("과거 이력 리플레이<br/>3,000건")] --> LC
+  LC -->|"진화된 Agent 배포"| LA
+  POL["eval/policy.json<br/>예산 · 임계값 · 하네스 — 루프 밖 고정"] -.->|"제약"| LA & LB & LC
+```
+> **그림 2.** 3중 루프 — 실행 결과가 진화의 재료가 되고, 진화 결과가 다시 실행을 바꾼다 · 이미지: [SVG](diagrams/poc-loops.svg) · [PNG](diagrams/poc-loops.png)
+
+
 * **구현 기능:** 3중 루프마다 트리거, 종료 조건, 예산, 검증 게이트를 둔다. 예산과 임계값은 루프가 수정할 수 없는 `eval/policy.json`에 고정한다(L2: 최대 5회·15분·토큰 120k, Jev 자율 ≥0.90 / 재검토 ≥0.60, 상태 변경 하한 0.95)
 
 * **동작 원리:**
   * **L2 Heal**: `jev_classify_error`(확신도 0.70 미만이면 진단 코드를 먼저 실행하고 재분류) → `diagnose_codeact` → `write_patch` → `check_blacklist` → `run_regression`(기존 회귀 + 신규 포맷, 하나라도 실패하면 반영 안 함) → `register_version` → `cascade`(같은 오류 시그니처를 가진 다른 Agent에 패치 재사용) → `reanswer_pending`. 복구 불가이거나 예산이 소진되면 `escalate_operator`로 넘긴다
     * 이번 변경: 진단 CodeAct가 **로그 슬라이싱**으로 동작한다. Run별 헤더 → 포맷이 바뀐 경계 전후 10행 → Run별 샘플 5행만 관찰하고, 원문 전체를 LLM 컨텍스트에 넣지 않는다
   * **L2 Grow**: `search_archive`(기각·폐기 Genome이 있으면 복원 우선) → `write_spec` → `explore_schema` → `generate_code_and_tests` → `run_tests` → `register_probation` → L1 복귀. 실패하면 재생성하고, 예산을 소진하면 `abort_with_reason`으로 끝낸다
-    * 이번 변경: 스키마 탐색 CodeAct가 코드값 분포·결측·경계일에서 **엣지 케이스 6종을 도출**하고, 정상 8건 + 엣지 6건 + 하네스 불변식으로 검증한다
+    * 이번 변경 — **적대적 자율 검증(Adversarial Self-Verification)**: 스키마 탐색 CodeAct가 코드값 분포·결측·경계일에서 **자기 코드를 공격하는 엣지 케이스 6종을 스스로 도출**하고, 정상 8건 + 엣지 6건 + 하네스 불변식으로 검증한다. SC-002에서 1회차 코드는 정상 8/8을 통과했지만 엣지 4/6에서 걸렸다(미등록 코드 `KeyError`, 분 단위 컬럼을 시간으로 읽어 사용시간 60배 과대). Factory가 이를 스스로 고쳐(Self-Correction) 2회차 14/14 통과 후에만 probation으로 투입했다. 생성 → 공격 → 수정 → 재검증 → 투입이 사람 없이 도는 자율형 CI/CD
   * **L3 Evolve**: `collect_metrics` → `jev_need_evolve` → `mutate`(최대 3후보, 아카이브에서 출발점 선택) → `evaluate_harness`(Evolve셋 개선 & Held-out 비하락) → `select`(사람 승인) → `archive`(채택·기각 모두 보관) → `shadow_run` → `promote` 또는 `auto_rollback`(결함 공용 스킬에 의존하는 Agent 전체를 Lineage 기준으로 원자적 롤백). Retire 분기는 의존성 분석 → 대체 검증 → `deprecated` 유예 → 사람 승인 → `retired` 아카이브 순서로 진행한다
 
 * **주요 기술:** LangGraph 서브그래프(`loops/l2_heal.py`, `loops/l2_grow.py`, `loops/l3_evolve.py`, `loops/l3_ops.py`), 예산 이벤트(`budget`), 루프 밖 하네스(`eval/harness.py`, `eval/testcases.py`)
@@ -53,7 +102,7 @@
 
 * **구현 기능:** 5계층 개선 — ① 파라미터·프롬프트(교훈) ② 스킬(공용 스킬 추출) ③ Agent 코드 ④ Agent 구성(생성·병합·폐기) ⑤ Super Agent 편성 전략(불필요 호출 제거·템플릿 승격·임계값 재조정)
 
-* **동작 원리:** 3년치 Qual 이력 3,000건을 시간순으로 재생하면서 분기마다 Walk-forward로 진화하고, 최근 6개월은 Held-out으로 진화 없이 평가만 한다(SC-006). 운영 중에는 야간 L3가 실제 결과와 Override를 학습한다(SC-007·004·005·008·009). Genome 버전 규칙은 다음과 같다. Heal은 PATCH, Evolve는 MINOR, 구성 변경은 MAJOR이고, Grow는 `0.x` probation에서 출발해 사람 승인 후 `1.0.0`으로 승격된다. 결함 판정된 버전 번호는 재사용하지 않는다
+* **동작 원리:** **Walk-forward 사전 검증** — 운영 투입 전에 3년치 Qual 이력 3,000건을 시간순으로 재생하면서 분기마다 진화하고 다음 분기로 검증하며, 최근 6개월은 Held-out으로 진화 없이 평가만 한다(SC-006). Time-Travel Guard가 `event_ts ≤ replay_clock` 데이터만 통과시켜 미래 데이터 참조를 차단하므로, 과적합 없이 얻은 성능 향상만 남는다. 운영 중에는 야간 L3가 실제 결과와 Override를 학습한다(SC-007·004·005·008·009). Genome 버전 규칙은 다음과 같다. Heal은 PATCH, Evolve는 MINOR, 구성 변경은 MAJOR이고, Grow는 `0.x` probation에서 출발해 사람 승인 후 `1.0.0`으로 승격된다. 결함 판정된 버전 번호는 재사용하지 않는다
 
 * **주요 기술:** Genome(코드·프롬프트·툴·테스트·지표·버전) Registry와 Lineage(`autoqual/registry.py`), 진화 아카이브(기각안을 보존했다가 SC-009에서 재출발), Shadow 비교, 리플레이 엔진(`loops/replay.py`), 시나리오 타임라인(`autoqual/story.py`, 챕터별 체크포인트)
 

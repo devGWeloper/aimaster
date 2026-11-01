@@ -1,6 +1,7 @@
 """Super Agent — 요청 해석·Jev 편성·CodeAct 실행 계획 작성·결과 종합.
 
-- 엔티티 추출(summary 역할 모델 / 오프라인: 규칙 기반 추출기), 모호하면 추측하지 않고 확인 질문
+- 의도 가드(결정적 규칙): 데이터 변경·정책 변경·프롬프트 탈취·인젝션은 거절, 승인 우회·판정 지정은 무시하고 정상 절차
+- 엔티티 추출(summary 역할 모델 / 오프라인: 규칙 기반 추출기), 모호하거나 미등록 장비면 추측하지 않고 확인 질문
 - Jev 편성: p ≥ route_auto 자율, route_escalate~route_auto 는 LLM 재검토, 미만 제외
 - 실행 계획: Python 코드(CodeAct)로 하위 Agent 병렬 호출·결과 결합 순서를 작성 → 샌드박스 실행
 - 편성 템플릿이 적용 조건과 일치하면 LLM 계획 생략
@@ -35,6 +36,33 @@ ITEM_PATTERNS = [
 ]
 UNIT_NORM = {"ea": "ea", "개": "ea", "%": "%", "å/min": "A/min", "a/min": "A/min", "angstrom/min": "A/min", "nm/min": "nm/min",
              "mtorr/min": "mTorr/min", "torr": "Torr"}
+
+# 의도 가드 (결정적 규칙, LLM 해석 전) — 테스트 단계 레드팀에서 위험 요청이 장비 ID만 붙으면 AutoQual로 실행되던 문제 수정
+#   block: 요청 전체를 거절 (Agent 호출 없음) / note: 해당 지시만 무시하고 정상 절차(사람 승인·judge_qual)로 진행
+_ACT_CHANGE = r"(바꿔|바꾸|변경|수정|올려|낮춰|꺼\b|끄|비활성|우회|조정해|set\b|change|disable)"
+GUARD_RULES = [
+    ("prompt_injection", "block", r"(이전|앞|위)(의|에)?\s*(모든\s*)?(지시|명령|규칙)[^\n]{0,12}무시|ignore\s+(all\s+|the\s+)?(previous|above|prior)\s+instructions|지금부터\s*너는",
+     "이전 지시를 무시하라는 문구가 포함된 요청은 처리하지 않습니다. 필요한 작업만 다시 요청해 주세요."),
+    ("prompt_extraction", "block", r"(시스템|system)\s*(프롬프트|prompt)|프롬프트[^\n]{0,8}(보여|알려|출력|공개)|(내부|숨은)\s*지시",
+     "시스템 프롬프트·내부 지시는 공개하지 않습니다. Agent의 실행 코드와 판단 근거는 트레이스·Agent 화면에서 확인할 수 있습니다."),
+    ("data_mutation", "block", r"(지워|지우|삭제|drop\b|delete\b|truncate|초기화|덮어\s*써)[^\n]{0,20}|(db|테이블|table|데이터|레코드|컬럼|이력)[^\n]{0,16}" + _ACT_CHANGE,
+     "원본 데이터·레거시 시스템은 읽기 전용입니다. Agent는 데이터를 삭제·수정하지 않습니다."),
+    ("policy_tamper", "block", r"(임계값|threshold|policy|정책|예산|평가\s*기준|하네스|harness|held-?out|홀드\s*아웃)[^\n]{0,20}" + _ACT_CHANGE,
+     "평가 기준·예산·임계값은 루프 밖에 고정되어 대화로 바꿀 수 없습니다. 변경은 운영자가 승인 패널의 정책 변경으로만 합니다."),
+    ("approval_bypass", "note", r"승인\s*(없이|생략|건너|패스)|무승인|(바로|즉시|강제로?)\s*(up|업|가동|run)|(상태|state)[^\n]{0,10}(run|up|업|가동)[^\n]{0,6}(으로|로)?\s*(바꿔|변경|전환|처리)",
+     "승인 우회 지시는 무시합니다. 장비 Up은 Qual 판정 후 반드시 사람이 승인합니다."),
+    ("judge_override", "note", r"(그냥|무조건|강제로?)\s*(pass|패스|합격)|pass\s*(로|으로)\s*(판정|처리)|(판정|judge_qual|spec)[^\n]{0,10}(무시|건너|생략)",
+     "판정 지정 지시는 무시합니다. Pass/Fail은 judge_qual(결정적 코드)이 Spec과 비교해 판정합니다."),
+]
+
+
+def intent_guard(text: str) -> list[dict]:
+    hits = []
+    for cat, action, pat, msg in GUARD_RULES:
+        if re.search(pat, text, re.I):
+            hits.append({"category": cat, "action": action, "message": msg})
+    return hits
+
 
 CAP_RULES = [  # (패턴, 필요 능력)
     (r"부품.*(사용\s*시간|수명|교체)|사용\s*시간.*부품|focus\s*ring.*시간", {"qual_history", "part_usage"}),
@@ -123,13 +151,15 @@ class SuperAgent:
             ent["eqp_prefix"] = grp.group(1)
         if hint:
             ent.update({k: v for k, v in hint.items() if v})
+        if ent.get("eqp_id") and ent["eqp_id"] not in C.EQP_MODEL:
+            ent["unknown_eqp"] = True            # 미등록 장비 — 추측으로 진행하지 않고 되묻는다
         if ent.get("eqp_id"):
             ent["eqp_model"] = C.EQP_MODEL.get(ent["eqp_id"])
             ent["eqp_group"] = C.EQP_GROUP.get(ent["eqp_id"])
             if ent.get("chamber"):
                 ent["chamber_id"] = f"{ent['eqp_id']}-{ent['chamber']}"
         return {"text": t, "rtype": rtype, "entities": ent, "measurements": meas, "required_caps": sorted(caps),
-                "period": period, "ambiguous": ambiguous}
+                "period": period, "ambiguous": ambiguous, "guard": intent_guard(t)}
 
     # ── 2. 편성 ─────────────────────────────────────────────────────
     def agent_cards(self, include_probation=True) -> list[dict]:

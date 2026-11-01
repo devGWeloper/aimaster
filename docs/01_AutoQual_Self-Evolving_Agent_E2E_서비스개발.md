@@ -2,11 +2,50 @@
 
 * **완성된 아키텍처 핵심:** LangGraph 기반 **3중 루프 멀티 에이전트**(L1 Task · L2 Heal/Grow · L3 Evolve)가 CodeAct(Python 코드를 행동으로 샌드박스 실행)로 AutoQual 업무를 수행하고, 운영 중 쌓인 경험·3년치 이력 리플레이로 **Agent 자체(코드·스킬·구성·편성 전략)를 스스로 진화**시키는 파이프라인 완성. 분기 판단은 Jev(보정 확률), Spec 판정은 결정적 코드(`judge_qual`), 장비 상태 변경·승격·진화안·폐기는 사람 승인 게이트를 거친다.
 
-* **최종 산출물 형태:** 웹 운영 콘솔 — FastAPI + SSE 백엔드(`ui/server.py`)가 Agent의 모든 사고·행동 이벤트를 실시간 송출하고, React 19 + Vite + Tailwind v4 + shadcn/ui + React Flow로 만든 SPA(`ui/web`, 빌드 결과물 `ui/web/dist`를 FastAPI가 서빙)가 6개 화면으로 보여준다. Mock Fab(장비 30대·챔버 90개·PM 8종·Qual 이력 3,000건/3년, 장애 주입기 포함)이 데이터 서버·MES 역할을 한다.
+<!-- diagram: e2e-architecture -->
+```mermaid
+flowchart LR
+  subgraph FE["운영 콘솔 · React 19 + Vite + Tailwind v4 + shadcn/ui + React Flow"]
+    V1["라이브<br/>업무 흐름 · 편성 맵 · 변경 스포트라이트 · 시연 케이스"]
+    V2["루프 · 진화 · Agent · 승인 · Fab·KPI"]
+    ST["Zustand 슬라이스<br/>live · chat · trace · biz · evolve"]
+  end
+  subgraph BE["FastAPI · ui/server.py"]
+    API["REST<br/>chat · approval · story · demo · fault"]
+    SSE["SSE /api/events<br/>이벤트 30여 종"]
+  end
+  subgraph CORE["AutoQual 엔진 · autoqual/"]
+    C1["L1 Task<br/>LangGraph"]
+    C2["L2 Heal · Grow"]
+    C3["L3 Evolve · 리플레이"]
+    RT["CodeAct Runtime<br/>Sandbox · Jev · judge_qual"]
+    BUS["EventBus<br/>설명용 감속 narrate"]
+  end
+  subgraph DATA["저장소 · runtime/"]
+    AS[("agentstore.db<br/>Registry · 메모리 · 아카이브 · 감사")]
+    CP[("챕터 체크포인트")]
+  end
+  subgraph MOCK["Mock Fab · mock_env/"]
+    MDB[("기준정보 · FDC · 레거시 DB")]
+    FI["장애 주입기"]
+  end
+  EVAL["eval/<br/>하네스 · policy · KPI · qa_suite<br/>루프 밖 고정"]
+  V1 & V2 -->|HTTP| API --> CORE
+  CORE --> BUS --> SSE -->|"스트림"| ST --> V1 & V2
+  CORE --> AS & CP
+  CORE -->|"읽기 전용"| MDB
+  FI --> MDB
+  EVAL -.->|"채점 · 제약"| CORE
+```
+> **그림 1.** 최종 아키텍처 — 운영 콘솔 · FastAPI/SSE · AutoQual 엔진 · Mock Fab · 이미지: [SVG](diagrams/e2e-architecture.svg) · [PNG](diagrams/e2e-architecture.png)
+
+
+* **최종 산출물 형태:** 웹 운영 콘솔 — FastAPI + SSE 백엔드(`ui/server.py`)가 Agent의 모든 사고·행동 이벤트를 실시간 송출하고, React 19 + Vite + Tailwind v4 + shadcn/ui + React Flow로 만든 SPA(`ui/web`, 빌드 결과물 `ui/web/dist`를 FastAPI가 서빙)가 7개 화면으로 보여준다. Mock Fab(장비 30대·챔버 90개·PM 8종·Qual 이력 3,000건/3년, 장애 주입기 포함)이 데이터 서버·MES 역할을 한다.
 
   | 화면 | 보여주는 것 |
   | --- | --- |
-  | **라이브** (기본) | 왼쪽: "지금 Agent가 하는 일" 큰 자막 · 현재 루프 스테퍼 · Agentic 지표 · 행동 일지 / 가운데: Agent 편성 맵(호출 펄스, 각 Agent가 가져온 값 칩, 생성·치유·진화·폐기 연출) + 포커스 카드(CodeAct 코드 타자, Jev 확률 막대, judge_qual 판정 표, 승인, 응답, diff, 테스트) / 오른쪽: 엔지니어 대화 |
+  | **시연** (기본) | 시나리오 4개 — ① 신규 분석 기능 자동 추가(Grow) ② 로그 포맷 변경 자동 대응(Heal) ③ 운영 결과로 추천 기준 보정(Evolve) ④ 미사용 기능 정리(Retire) — 를 질문·사건 단위 단계로 실행. 1단계는 매번 시작 직전 체크포인트로 복원해 같은 결과를 재현(`/api/demo/run`). 가운데 **Agent 명단**이 시작 전과 비교해 새로 추가·버전 변경·정리 예정·정리·복원을 표시하고, 아래 편성 맵·변경 스포트라이트가 같은 순간을 그린다. 오른쪽은 단계별 "이때 볼 것"과 Agent 답변. 처음 한 번 「시연 준비」(SC-008까지 최대 속도 완주, 약 6분)로 체크포인트 생성 |
+  | **라이브** | 왼쪽: 챕터별 "업무 상황" 설명 · "지금 Agent가 하는 일" 큰 자막 · 현재 루프 스테퍼 · Agentic 지표 · 행동 일지 / 가운데: AutoQual 업무 흐름 바(PM 완료 → Qual 절차 → 매수 추천 → Seasoning·측정 → Spec 판정 → 사람 승인 → UP, 단계별 담당 Agent·추천 매수·판정 결과) + Agent 편성 맵(노드마다 Agent가 대신 답하는 업무 질문·데이터 출처·호출 수, 호출 펄스, 값 칩, 생성·치유·진화·폐기 연출, Super Agent 현재 단계) + 포커스 카드("업무 관점" 한 줄 + CodeAct 코드 타자, Jev 확률 막대, judge_qual 판정 표, 승인, 응답, diff, 테스트) + **Agent 변경 스포트라이트**(기능 추가·코드 수정·기준 보정 반영·기능 통합·정식 운영 전환·자동 되돌림·정리 예정·정리·복원 순간을 맵 위 카드로 크게 표시, 버전 변화·사유·절차 설명, 지난 사건은 변경 기록으로 유지) / 오른쪽: 엔지니어 대화(어느 시점에서도 재현되는 예시 질문 6개). 상단 "이 Agent는 무엇을 하나요?" 소개 창(AutoQual 업무·As-Is 손실·To-Be·Self-Evolving 이유·핵심 차별 기술·안전장치·KPI·화면 보는 법, 첫 접속 시 자동 표시). 재생 속도 1×는 발표·설명용으로 연출 대기를 2.5배(`EventBus.narrate`) 늘리고, 리플레이·배경 운영 같은 대량 처리 대기는 제외 |
   | **루프** | 3중 루프 다이어그램(토큰이 실제 LangGraph 노드를 따라 이동, 루프 사이 연결이 빛남, L2 예산 게이지) + 실행 트레이스(런 단위 span: 코드·확률·값·도구 원장·판정·diff) |
   | **진화** | 진화 사이클 5단계(감지 → 변이 후보 → 하네스 평가 → 선택·승인 → 반영·보관)와 진행 중인 런, 진화 사건 피드(Grow·Heal·Evolve·롤백·폐기 리포트), Genome 계보, 이력 리플레이 곡선·Held-out 평가, 5계층·아카이브 |
   | **Agent** | Registry 카드 → Genome 코드(버전별)·프롬프트·도구·Lineage·테스트 드로어 |
@@ -33,6 +72,38 @@
 
   프론트엔드는 SSE 이벤트(`node`·`jev`·`code`·`agent_start/agent_end`·`judge`·`approval`·`version`·`candidate`·`report` 등 30여 종)를 Zustand 슬라이스(live·chat·trace·biz·evolve)로 접어 넣고, 연출(펄스·칩·토큰 이동)은 별도 허브로 분리해 새로고침 후에도 백로그로 화면을 재구성한다.
 
+<!-- diagram: e2e-request -->
+```mermaid
+sequenceDiagram
+  actor EN as 엔지니어
+  participant SA as Super Agent
+  participant JV as Jev
+  participant SB as Sandbox
+  participant AG as 기준정보·로그·레거시 Agent
+  participant FAB as Mock Fab
+  participant JQ as judge_qual
+  actor OP as 운영자
+  EN->>SA: ETCH-07 B챔버 Wet Clean PM 끝났어. AutoQual 진행해줘
+  SA->>SA: 의도 가드 · 엔티티 추출 · 경험 메모리 조회
+  SA->>JV: 어떤 Agent를 부를까?
+  JV-->>SA: spec 0.98 · log 0.95 · legacy 0.91
+  SA->>SB: 실행 계획 코드 (CodeAct)
+  SB->>AG: 병렬 호출
+  AG-->>SB: Spec · 센서 상태 · 과거 1차 Pass율
+  SB-->>SA: 결과 (사후 검증 통과)
+  SA-->>EN: Seasoning 매수 추천 + 근거 (교훈 ID · 원천 이력)
+  SA->>FAB: Seasoning · 측정 대기
+  FAB-->>SA: Particle · ER · Uniformity 측정값
+  SA->>JQ: Spec 비교
+  JQ-->>SA: PASS (결정적)
+  SA->>OP: 장비 UP 승인 요청
+  OP-->>SA: 승인
+  SA->>FAB: DOWN → UP
+  SA->>SA: 경험 메모리 기록 (L3 진화 재료)
+```
+> **그림 2.** 요청 1건의 흐름 (예시: SC-001 PM 후 AutoQual) · 이미지: [SVG](diagrams/e2e-request.svg) · [PNG](diagrams/e2e-request.png)
+
+
 ## 2. KPI 달성도 (Plan vs Actual)
 
 Autopilot 타임라인(초기 구축 → SC-006 리플레이 → SC-001~005·007~009, 가상 시각 2026-07 ~ 2026-12)을 오프라인 Playbook 모드로 완주한 뒤 `eval/kpi.py`(루프가 접근할 수 없는 고정 코드)가 저장소·하네스 기록에서 계산한 값이다. 운영 UI 「Fab·KPI」 화면과 `/api/kpi`에서 같은 값을 볼 수 있다.
@@ -44,9 +115,9 @@ Autopilot 타임라인(초기 구축 → SC-006 리플레이 → SC-001~005·007
 | **Agent 자동 생성 성공률** | 70% 이상 | **100%** (미지원 요청 3건 중 3건 생성·테스트 통과: chamber_trend · part_history · lot_trace) | 초과 달성 (스키마 탐색 기반 엣지 케이스 테스트 포함) |
 | **오류 자가 복구율** | 70% 이상 | **71.4%** (장애 영향 Agent 7건 중 자동 복구 5건, 연쇄 복구 1건 포함) | 목표 달성 (복구 불가 2건은 예산 안에서 조기 중단 → 운영자 에스컬레이션, 분모 포함) |
 | **평균 복구 시간(MTTR)** | 10분 이내 | **4.1분** (장애 감지 → 패치 반영, 가상 시각) | 목표 달성 |
-| **진화 후 구조 개선** | 코드 중복률 50%↓, 응답시간 30%↓ | **중복 39% → 0% (100%↓)**, **log_agent p50 8.8s → 4.0s (55%↓)** | 초과 달성 (fdc_toolkit 추출 + 트레이스 로딩 캐시, Shadow 24h 통과 후 승격) |
+| **진화 후 구조 개선** | 코드 중복률 50%↓, 응답시간 30%↓ | **중복 39% → 0% (100%↓)**, **log_agent p50 8.7s → 4.0s (54%↓)** | 초과 달성 (fdc_toolkit 추출 + 트레이스 로딩 캐시, Shadow 24h 통과 후 승격) |
 | **이력 리플레이 진화 효과** | 판정 일치율 +15%p | **+19.4%p** (Held-out 65.59% → 85.02%) | 초과 달성 (10개 분기 Walk-forward 진화) |
-| **미래 정보 누출** | 0건 | **0건** (Time-Travel Guard 필터·차단 17,857건) | 목표 달성 |
+| **미래 정보 누출** | 0건 | **0건** (Time-Travel Guard 필터·차단 17,863건) | 목표 달성 |
 | **Qual 1차 Pass율** | 진화 전 대비 +15%p | **+15.2%p** (Held-out 백테스트 71.46% → 86.64%; 리플레이 직후 83.81% → SC-007 판단 진화 후 86.64%) | 목표 달성 |
 | **엔지니어 Override율** | 50% 감소 | **81% 감소** (ETX-300 Wet Clean 25% → 5%, 판단 진화 전후) | 초과 달성 |
 | **Agent 호출 효율** | 요청당 호출 Agent 20%↓ | **21%↓** (2.9 → 2.3, super_agent 1.1.0 → 1.2.0 편성 전략 진화) | 목표 달성 |
@@ -55,7 +126,7 @@ Autopilot 타임라인(초기 구축 → SC-006 리플레이 → SC-001~005·007
 | **루프 폭주** | 0건 | **0건** (L2 루프 6회, 예산 5회·15분 초과 없음) | 목표 달성 |
 | **무승인 장비 상태 변경** | 0건 | **0건** (장비 상태 변경 요청 320건 전부 승인 패널 경유) | 목표 달성 |
 
-16개 지표 중 16개 달성. 수치는 시드 고정 목업과 오프라인 Playbook(결정적 재현) 기준이며, 사내 LLM API 연동 시 재측정이 필요하다.
+16개 지표 중 16개 달성. 수치는 시드 고정 목업과 오프라인 Playbook(결정적 재현) 기준이며, 사내 LLM API 연동 시 재측정이 필요하다. 테스트 및 고도화 단계 변경(의도 가드·설명용 재생 속도 등) 이후 `python -m eval.qa_suite --story`로 타임라인을 다시 완주해 16/16을 재확인했다(최대 속도 364.5초).
 
 ## 3. 창출된 핵심 가치
 
@@ -79,7 +150,11 @@ Autopilot 타임라인(초기 구축 → SC-006 리플레이 → SC-001~005·007
 
 * *Jev 판단 게이트: 반복 분기 판단은 보정 확률(자율 ≥0.90, 재검토 ≥0.60), 코드·계획은 LLM, 판정·권한은 결정적 코드로 역할을 분리했다*
 
-* *Time-Travel Guard가 리플레이 중 `event_ts ≤ replay_clock` 데이터만 통과시켜 Walk-forward 진화의 미래 정보 누출을 0건으로 유지한다*
+* ***Zero-Hallucination 메모리 아키텍처**: AutoQual은 판단 하나가 장비 Up·Lot Scrap으로 이어져 환각 리스크를 허용할 수 없으므로 RAG를 전략적으로 배제했다. 모든 근거를 장비 모델·챔버·PM 종류·시점 키의 정확 DB 쿼리로 가져오고, 추천마다 교훈 ID·원천 이력 건수를 인용해 근거를 추적·재현할 수 있다*
+
+* ***적대적 자율 검증 (Grow Loop Edge 검증)**: Agent Factory가 코드 작성에 그치지 않고 자기 코드를 공격하는 엣지 케이스를 스스로 도출해 검증한다. SC-002에서 1회차 코드의 단위 오류(분 → 시간, 60배 과대)·미등록 코드 오류를 엣지 테스트로 스스로 잡아 Self-Correction한 뒤 14/14 통과 후에만 투입했다 — 사람 리뷰 없이 도는 자율형 CI/CD*
+
+* ***Walk-forward 사전 검증**: 운영 전에 과거 3,000건을 시간순으로 재생해 분기별 진화 → 다음 분기 검증을 반복했다. Time-Travel Guard가 `event_ts ≤ replay_clock` 데이터만 통과시켜 미래 정보 누출 0건, 과적합 없이 Held-out 판정 일치율 65.6% → 85.0%(+19.4%p)를 얻었다*
 
 * *운영 UI: SSE 이벤트 스트림 하나로 "지금 Agent가 무엇을 생각·판단·실행·복구·진화하는지"를 자막·편성 맵·루프 다이어그램·트레이스로 동시에 보여주는 관측 가능성(Observability) 구조*
 
@@ -89,7 +164,7 @@ Autopilot 타임라인(초기 구축 → SC-006 리플레이 → SC-001~005·007
 
 * 권한 통제: *원본 데이터·레거시 DB는 읽기 전용 프록시(`mode=readonly`), Agent는 Genome에 선언된 도구만 호출 가능(권한 프록시), 장비 상태 변경·Agent 정식 승격·진화안 채택·폐기 확정은 반드시 사람 승인(자동·타임아웃 승인 없음)*
 
-* Injection 대응: *CodeAct 코드는 AST 정적 검사(허용 import 화이트리스트, 쓰기 API 차단) 후에만 샌드박스에서 실행, 레거시 SQL은 읽기 전용 커넥션·테이블 화이트리스트, 하위 Agent 결과는 Pydantic 스키마 검증 실패 시 "확인 불가" 처리(추측 답변 금지)*
+* Injection 대응: *요청 해석 전 결정적 의도 가드(`intent_guard`)가 데이터 삭제·정책 변경·프롬프트 노출·인젝션은 거절, 승인 우회·판정 지정은 무시하고 정상 절차로 진행(레드팀 18건 탐지 18건, 정상 요청 오탐 0/18 — 테스트 및 고도화 문서 3장). CodeAct 코드는 AST 정적 검사(허용 import 화이트리스트, 쓰기 API 차단) 후에만 샌드박스에서 실행(공격 코드 27건 차단 27건), 레거시 SQL은 읽기 전용 커넥션·테이블 화이트리스트, 하위 Agent 결과는 Pydantic 스키마 검증 실패 시 "확인 불가" 처리(추측 답변 금지)*
 
 * 장애 대응: *외부 장애는 백오프 재시도·운영자 알림, 코드 결함은 L2 Heal(예산 초과 시 조기 중단 → 에스컬레이션), 승격 후 7일 Shadow 불일치는 원자적 자동 롤백 + Held-out셋 추가, 실패 패치 블랙리스트(AST 해시)로 동일 시도 반복 차단, 모든 실행·도구 호출·승인은 감사 로그 보관*
 

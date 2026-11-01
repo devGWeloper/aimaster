@@ -26,6 +26,7 @@ aimaster/
 │  │  ├─ 02_Persona_Swarm/
 │  │  └─ 03_Talk-to-Fab/                   # 초안·시나리오 + demo/ (디지털트윈 웹 데모)
 │  ├─ 01_AutoQual_Self-Evolving_Agent_*.md # 산출물 (아래 문서 맵)
+│  ├─ diagrams/                            # 문서 도식 이미지(SVG·PNG) — 원본은 각 md 안의 Mermaid 블록, `python docs/diagrams/render.py`로 생성
 │  └─ format.md                            # 설계서 양식
 │
 ├─ mock_env/      # 목업 Fab: config·simulator(Qual 물리)·generate(DB 생성, 시드 고정)·formats(SW 버전별 로그)·world(데이터 서버·장애 주입·MES)
@@ -35,15 +36,15 @@ aimaster/
 │  ├─ loops/      #   l1(LangGraph L1), l2_heal, l2_grow(Agent Factory), l3_evolve(리플레이 분기 진화), l3_ops(운영 진화·롤백·폐기), replay
 │  ├─ ops.py      #   요청 실행기 + 배경 운영 시뮬레이터(가상 엔지니어)
 │  └─ story.py    #   Autopilot 타임라인 (SC-006 → SC-009, 챕터 체크포인트)
-├─ eval/          # 루프 밖 고정: policy.json(예산·임계값), harness(테스트·후보 평가), testcases(오라클), kpi
+├─ eval/          # 루프 밖 고정: policy.json(예산·임계값), harness(테스트·후보 평가), testcases(오라클), kpi, qa_suite(레드팀·품질·성능 실측 → qa_result.json)
 ├─ ui/            # 운영 UI: server.py (FastAPI + SSE, web/dist 서빙) · web/ (React 19 + Vite + Tailwind v4 + shadcn/ui + React Flow SPA)
-│  └─ web/src/    #   store/(SSE → live·chat·trace·biz·evolve 슬라이스) · pages/(라이브·루프·진화·Agent·승인·Fab) · components/(map 편성 맵, loop 다이어그램·트레이스, evolve, live, shell) — dist/는 커밋(빌드 산출물)
+│  └─ web/src/    #   store/(SSE → live·chat·trace·biz·evolve 슬라이스) · pages/(시연·라이브·루프·진화·Agent·승인·Fab) · components/(map 편성 맵, loop 다이어그램·트레이스, evolve, live, shell) — dist/는 커밋(빌드 산출물)
 ├─ config/        # llm.example.json(사내 LLM API), jev.example.json — 실제 llm.json·jev.json 은 git 제외
 ├─ runtime/       # 실행 상태(agentstore.db·legacy_live.db·checkpoints) — git 제외
 └─ tests/         # python -m unittest discover tests
 ```
 
-실행: `pip install -r requirements.txt` → `python -m mock_env.generate` → `python -m ui.server` (http://127.0.0.1:8765) → UI에서 Autopilot 시작. 프론트 수정 시 `cd ui/web && npm install && npm run build`(dist/ 갱신 후 커밋), 개발 중에는 `npm run dev`(5173, /api 프록시). 테스트: `python -m unittest discover tests`. LLM은 사내 제공 API만 사용한다(`config/llm.json`, 키는 환경변수). 미설정 시 오프라인 Playbook으로 결정적 재현.
+실행: `pip install -r requirements.txt` → `python -m mock_env.generate` → `python -m ui.server` (http://127.0.0.1:8766) → UI에서 Autopilot 시작. 프론트 수정 시 `cd ui/web && npm install && npm run build`(dist/ 갱신 후 커밋), 개발 중에는 `npm run dev`(5173, /api 프록시). 테스트: `python -m unittest discover tests`. LLM은 사내 제공 API만 사용한다(`config/llm.json`, 키는 환경변수). 미설정 시 오프라인 Playbook으로 결정적 재현.
 
 ## 문서 맵
 
@@ -55,7 +56,7 @@ aimaster/
 | 설계 양식 | `docs/format.md` | 설계서 템플릿 |
 | 상세 설계 및 개발 환경 구축 | `docs/01_AutoQual_Self-Evolving_Agent_상세설계_및_개발환경구축.md` | Agent 페르소나, LangGraph 워크플로우·상태, 도구 명세, 메모리 전략, 기술 스택 (구 설계서) |
 | PoC 모듈 구현 | `docs/01_AutoQual_Self-Evolving_Agent_PoC_모듈구현.md` | 핵심 구현(워크플로우·도구·메모리·CodeAct·3중 루프·Self-Evolving·Jev·무대 UI), 문제 해결·리서치, 동작 검증(SC-001~003 실행 결과)·KPI 실측 |
-| 테스트 및 고도화 | `docs/01_AutoQual_Self-Evolving_Agent_테스트_및_고도화.md` | 작성 예정 (양식은 사용자 제공) |
+| 테스트 및 고도화 | `docs/01_AutoQual_Self-Evolving_Agent_테스트_및_고도화.md` | 레드팀·품질·성능 실측(`python -m eval.qa_suite --story`), 테스트 단계 발견 결함과 수정(의도 가드·미등록 장비·설명 속도·업무 설명·시연 재현성), 4겹 가드레일 결과 |
 | E2E 서비스 개발 | `docs/01_AutoQual_Self-Evolving_Agent_E2E_서비스개발.md` | 최종 아키텍처(React 운영 콘솔 + FastAPI/SSE + 3중 루프), KPI 16종 Plan vs Actual, 가치, 운영·보안, 회고 |
 
 기능·KPI·도구 시그니처의 **기준(Source of Truth)은 위 기획서와 상세 설계서**다. 구현이 설계와 달라지면 상세 설계서도 함께 갱신한다.
@@ -106,6 +107,7 @@ aimaster/
 - [x] PoC 모듈 구현 문서
 - [x] KPI 측정 — `eval/kpi.py`, 운영 UI KPI 화면
 - [x] E2E 서비스 개발 — 운영 UI를 React(Vite + Tailwind + shadcn/ui + React Flow)로 전면 교체(`ui/web`), API 스모크 테스트(`tests/test_api.py`), E2E 문서
+- [x] 테스트 및 고도화 — `eval/qa_suite.py` 레드팀·품질·성능 실측, 의도 가드(`intent_guard`), 「시연」 화면(시나리오 4개를 질문·사건 단위 단계로, 체크포인트 복원 재현 · Agent 명단 변화 표시), Agent 변경 스포트라이트, 설명용 재생 속도(`narrate`)
 - [ ] 사내 LLM API 실연동 검증 (`config/llm.json` 설정 후 온라인 모드 실행)
 
 ## 작업 규칙

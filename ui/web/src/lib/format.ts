@@ -29,13 +29,19 @@ export function fmtNum(v: unknown, d = 1) {
   return Number(v).toLocaleString('ko-KR', { maximumFractionDigits: d });
 }
 export const esc = (t: unknown) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
-const KW = /\b(def|return|if|elif|else|for|in|import|from|as|not|and|or|None|True|False|while|try|except|raise|with|lambda|global|continue|break|pass|class|yield)\b/g;
+// 파이썬 구문 강조 — 원본 코드를 한 번만 훑는다. (치환을 여러 번 겹치면 앞에서 넣은 <span class="…"> 의 'class'·따옴표를
+//   다음 패스가 다시 잡아 HTML이 깨지고, 문자열·주석 안의 키워드·숫자까지 칠해진다)
+const TOK = /("""[\s\S]*?"""|'''[\s\S]*?'''|"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')|(#[^\n]*)|\b(def|return|if|elif|else|for|in|import|from|as|not|and|or|is|None|True|False|while|try|except|finally|raise|with|lambda|global|continue|break|pass|class|yield)\b|\b(\d+(?:\.\d+)?)\b/g;
+const TK_CLS = ['', 'tk-s', 'tk-c', 'tk-k', 'tk-n'];
 export function highlight(code: string) {
-  return esc(code)
-    .replace(/(&quot;.*?&quot;|'[^'\n]*')/g, '<span class="tk-s">$1</span>')
-    .replace(/(#[^\n]*)/g, '<span class="tk-c">$1</span>')
-    .replace(KW, '<span class="tk-k">$1</span>')
-    .replace(/\b(\d+(\.\d+)?)\b/g, '<span class="tk-n">$1</span>');
+  let out = '', last = 0;
+  for (const m of code.matchAll(TOK)) {
+    const i = m.index ?? 0;
+    const g = m.findIndex((x, k) => k > 0 && x != null);
+    out += esc(code.slice(last, i)) + `<span class="${TK_CLS[g]}">${esc(m[0])}</span>`;
+    last = i + m[0].length;
+  }
+  return out + esc(code.slice(last));
 }
 export function diffClass(ln: string) {
   if (ln.startsWith('+') && !ln.startsWith('+++')) return 'add';

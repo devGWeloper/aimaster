@@ -202,8 +202,8 @@
 .flowing { background-image: repeating-linear-gradient(90deg, var(--c, var(--l1)) 0 10px, transparent 10px 24px); background-size: 24px 100%; animation: flow-x 0.8s linear infinite; }
 @keyframes dash { to { stroke-dashoffset: -40; } }
 .dash-run { stroke-dasharray: 8 12; animation: dash 0.9s linear infinite; }
-@keyframes scanx { from { transform: translateX(0); } to { transform: translateX(144px); } }
-.scanbar { animation: scanx 0.9s ease-in-out 3 alternate; }
+@keyframes scanx { from { left: 0; } to { left: calc(100% - 6px); } }
+.scanbar { animation: scanx 1.6s ease-in-out 3 alternate; }
 @keyframes pop { 0% { transform: scale(.8); opacity: 0; } 60% { transform: scale(1.06); opacity: 1; } 100% { transform: scale(1); } }
 .pop { animation: pop .45s cubic-bezier(.2,.8,.2,1) both; }
 

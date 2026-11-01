@@ -283,7 +283,7 @@ class Healer:
             if not (h["replay"] and self.sys.bus.mute_depth) and (progress["n"] % 6 == 0 or not ok):
                 self.sys.bus.emit("tests", heal_id=h["heal_id"], agent_id=h["agent_id"], version=att["version"], n=progress["n"],
                                   ok=ok, case=c["test_id"], label=c["expect"].get("label"), why=why)
-                self.sys.bus.pace(0.05)
+                self.sys.bus.pace(0.05, bulk=True)
 
         res = self.sys.harness.run_tests(h["agent_id"], att["version"], extra=new_cases, on_case=on_case) if repro_ok else \
             {"passed": 0, "failed": 1, "total": 1, "failures": [{"case": "repro", "label": "재현 테스트", "error": repro_note}], "by_suite": {}}

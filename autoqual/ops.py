@@ -189,7 +189,7 @@ class RequestRunner:
             return {"approved": True, "approver": approver, "decided_ts": row["decided_ts"] if row else None}
         mode = self.sys.store.kv_get("approval_mode", "manual")
         if mode == "auto" or job.get("approver"):
-            self.sys.bus.emit("approval_countdown", request_id=rid, seconds=4)
+            self.sys.bus.emit("approval_countdown", request_id=rid, seconds=round(self.sys.bus.scaled(4.0)))
             self.sys.bus.pace(4.0)
             row = self.sys.store.one("SELECT * FROM approvals WHERE request_id=?", (rid,))
             if row and row["status"] == "pending":
@@ -284,7 +284,7 @@ class OpsSimulator:
             done += 1
             if done % 5 == 0:
                 bus.emit("ops_batch", phase="progress", done=done, n=len(evs), clock=S(self.sys.clock.now()))
-                bus.pace(0.15)
+                bus.pace(0.15, bulk=True)
         self.sys.clock.set(end)
         self.sys.flush()
         bus.emit("ops_batch", phase="end", n=done, label=label)

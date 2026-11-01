@@ -1,6 +1,6 @@
 """운영 UI 서버 — FastAPI + SSE.
 
-    python -m ui.server            # http://localhost:8765
+    python -m ui.server            # http://localhost:8766
     python -m ui.server --port 9000
 
 브라우저는 /api/state 로 스냅샷을 받고 /api/events (SSE) 로 Agent의 모든 사고·행동 이벤트를 실시간 수신한다.
@@ -30,7 +30,7 @@ from autoqual.story import Story  # noqa: E402
 from autoqual.system import System  # noqa: E402
 
 # 프론트엔드: ui/web (Vite + React + Tailwind + shadcn/ui) 빌드 결과물 dist/ 를 그대로 서빙한다.
-#   개발 시 `cd ui/web && npm run dev` (5173, /api 는 8765로 프록시) · 배포 시 `npm run build` → dist/ 커밋
+#   개발 시 `cd ui/web && npm run dev` (5173, /api 는 8766으로 프록시) · 배포 시 `npm run build` → dist/ 커밋
 DIST = Path(__file__).resolve().parent / "web" / "dist"
 
 app = FastAPI(title="AutoQual Self-Evolving Agent")
@@ -107,11 +107,13 @@ def state():
         {
             "clock": S.clock.now().isoformat(sep=" "),
             "speed": S.bus.speed,
+            "narrate": S.bus.narrate,
             "paused": not S.bus.paused.is_set(),
             "approval_mode": st.kv_get("approval_mode", "manual"),
             "llm": S.llm.describe(),
             "jev": {"model": S.jev.model, "calls": S.jev.calls},
             "story": STORY.status(),
+            "demos": STORY.demo_ready(),
             "registry": reg,
             "approvals": pend,
             "faults": faults,
@@ -197,6 +199,25 @@ async def story_jump(req: Request):
         "story", text=f"⤴ 체크포인트 복원: {body['id']} 직전 상태", level="info"
     )
     return J({"ok": ok})
+
+
+@app.post("/api/demo/run")
+async def demo_run(req: Request):
+    """시연 — 시나리오 한 단계 실행. 0단계는 시작 직전 체크포인트로 복원 후 실행(매번 같은 결과)."""
+    body = await req.json()
+    if STORY.running:
+        raise HTTPException(409, "다른 실행이 진행 중입니다. 끝난 뒤 다시 누르거나 정지하세요.")
+    if not STORY.demo_ready().get(body["id"]):
+        raise HTTPException(409, "시연 준비가 필요합니다. 「시연 준비」를 먼저 눌러 주세요 (최대 속도로 약 6분).")
+    sysm().bus.paused.set()
+    return J({"ok": STORY.run_demo(body["id"], int(body.get("step", 0)))})
+
+
+@app.post("/api/demo/prepare")
+def demo_prepare():
+    if STORY.running:
+        raise HTTPException(409, "다른 실행이 진행 중입니다. 정지 후 다시 시도하세요.")
+    return J({"ok": STORY.prepare_demos()})
 
 
 @app.post("/api/pause")

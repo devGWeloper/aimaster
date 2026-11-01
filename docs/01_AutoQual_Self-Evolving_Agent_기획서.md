@@ -22,6 +22,28 @@ AutoQual Self-Evolving Agent: CodeAct와 Loop Engineering으로 스스로 생성
 
   → 꼭 필요한 공정 시간은 약 2.5시간인데, 판단 준비와 1차 Fail 재작업이 붙으면 7~8시간이 됨. **Down Time의 절반 이상이 장비가 아니라 '판단'에서 생김**
 
+<!-- diagram: plan-asis-tobe -->
+```mermaid
+flowchart TB
+  subgraph ASIS["As-Is · 엔지니어가 세 시스템을 직접 오가며 판단 — 7~8시간"]
+    direction LR
+    A1["PM 완료<br/>장비 Down"] --> A2["기준정보 조회<br/>절차·Spec·레시피<br/>20~30분"] --> A3["FDC 화면 비교<br/>센서·알람<br/>30분"] --> A4["레거시 DB 조회<br/>약어·코드값<br/>30~60분"] --> A5["매수 결정<br/>경험과 감<br/>25~45매 편차"] --> A6["Seasoning·측정<br/>약 2.5시간"] --> A7{"1차 판정"}
+    A7 -->|"Fail 약 30%"| A8["원인 재분석 + 재작업<br/>+3~4시간"] --> A6
+    A7 -->|"Pass"| A9["보고·승인<br/>20분"] --> A10(["UP"])
+  end
+  subgraph TOBE["To-Be · 요청 한 줄 → Agent가 판단 준비 — 수 초 + 검토 5분"]
+    direction LR
+    B1["엔지니어 요청 한 줄"] --> B2["Super Agent<br/>Jev 편성 · CodeAct 계획"]
+    B2 --> B3["기준정보 Agent"] & B4["로그분석 Agent"] & B5["레거시DB Agent"]
+    B3 & B4 & B5 --> B6["매수 추천 + 근거<br/>교훈 ID · 원천 이력"] --> B7["Seasoning·측정"] --> B8{"judge_qual<br/>결정적 판정"}
+    B8 -->|"Fail"| B9["근거 있는 재작업 계획"] --> B7
+    B8 -->|"Pass"| B10["사람 승인"] --> B11(["UP"])
+  end
+  ASIS ~~~ TOBE
+```
+> **그림 1.** As-Is vs To-Be — 판단 준비와 재작업이 Down Time의 절반 이상 · 이미지: [SVG](diagrams/plan-asis-tobe.svg) · [PNG](diagrams/plan-asis-tobe.png)
+
+
 * Pain Point (가상 Fab 규모 기준 추정치, Mock 환경 베이스라인으로 검증 예정):
 
   1. **판단 실패 한 번 = 장비 수 시간 추가 Down**: 1차 Pass율을 약 70%로 가정하면 연 약 300건이 재작업이고, 건당 3~4시간씩 연 약 1,000 챔버·시간이 추가로 멈춤(챔버 1개를 40일 넘게 세워두는 규모). 원인을 모른 채 "일단 더 돌려보기"로 대응하면 2·3차 Fail까지 이어짐
@@ -109,7 +131,39 @@ AutoQual Self-Evolving Agent: CodeAct와 Loop Engineering으로 스스로 생성
 
 4. Self-Evolving 엔진: 진화 대상을 5계층으로 정의함. ① 파라미터·프롬프트(Jev 임계값, Seasoning 보정 계수, Agent 프롬프트) ② 스킬(성공한 CodeAct 코드를 파라미터화한 공용 함수) ③ Agent 코드(파서·SQL·판정 로직) ④ Agent 구성(생성·병합·분리·폐기) ⑤ Super Agent 편성 전략. 진화는 Grow(처리 불가 요청 → 새 Agent 생성), Heal(실행 오류·사후 검증 실패 → 오류 유형 분류 → 자기 코드 패치 → 회귀 테스트, 복구 중 이전 버전 Fallback), Evolve(코드 중복·기능 중첩·응답시간 증가·판단 정확도 저하·미사용 감지 → 개선)의 3가지 트리거로 시작되며, 공통적으로 "변이(LLM이 개선 후보 코드를 여러 개 생성) → 평가(루프 밖에서 고정된 평가 하네스로 채점) → 선택(Evolve셋 개선 + Held-out셋 비하락 시에만 채택) → 보관(채택·기각 후보를 모두 진화 아카이브에 저장해 다음 진화의 출발점으로 재사용)" 사이클을 따름. ④ Agent 구성 계층의 폐기(Retire)는 잘못 지우면 기능이 사라지므로 별도 안전 절차(장기 미사용·대체 감지 → 직접·간접 의존성 분석 → 대체 Agent로 회귀·실제 요청 재실행 검증 → 테스트 이관 → 유예 → 사람 승인 → 아카이브 보관)를 따르며, 이후 유사 요청이 오면 Agent Factory가 새로 만들기 전에 아카이브에서 복원을 먼저 검토. 채택안은 승격 후에도 직전 버전과 Shadow 병행하며 이상 시 공용 스킬 의존 Agent까지 원자적으로 자동 롤백, 모든 변경은 Lineage로 추적하며 원본 데이터·레거시 시스템은 수정하지 않음
 
+<!-- diagram: plan-evolve-cycle -->
+```mermaid
+flowchart LR
+  T1["Grow<br/>처리 불가 요청"] --> M
+  T2["Heal<br/>실행 오류 · 사후 검증 실패"] --> M
+  T3["Evolve<br/>중복 · 지연 · 정확도 저하 · 미사용"] --> M
+  M["① 변이<br/>LLM이 개선 후보 코드 생성<br/>5계층: 파라미터 → 스킬 → 코드 → 구성 → 편성"] --> E["② 평가<br/>루프 밖 고정 평가 하네스"] --> S{"③ 선택<br/>Evolve셋 개선<br/>∧ Held-out 비하락"}
+  S -->|"채택"| A["사람 승인 → Shadow 병행 → 승격"]
+  S -->|"기각"| K
+  A --> K[("④ 보관<br/>진화 아카이브<br/>채택·기각 모두")]
+  K -.->|"다음 진화의 출발점"| M
+  A -.->|"Shadow 불일치"| R["원자적 자동 롤백"]
+```
+> **그림 2.** Self-Evolving 공통 사이클 — 변이 → 평가 → 선택 → 보관 · 이미지: [SVG](diagrams/plan-evolve-cycle.svg) · [PNG](diagrams/plan-evolve-cycle.png)
+
+
 5. 이력 리플레이 진화(History Replay Evolving): 레거시 DB의 과거 Qual 이력(3년치)을 당시 장비 로그·부품 교체 이력·엔지니어 조치와 함께 시간순 가상 요청으로 재구성해 Agent가 실제 요청처럼 처리하게 하고, 당시 실제 결과와의 차이를 학습 재료로 사용. 분기 단위로 L3 Evolve를 실행해 다음 분기 데이터로 평가하는 Walk-forward 방식으로 진화하며, 최근 6개월은 Held-out 기간으로 남겨 최종 평가에만 사용. 재생 시점 이후 데이터 조회를 차단하는 Time-Travel Guard로 미래 정보 누출을 방지. 리플레이 중 구 장비 SW 로그 파싱 실패(Heal)나 반복적으로 필요한 분석(Grow)도 자연스럽게 발생해, 운영 투입 전에 판단 로직·스킬·Agent 구성이 지난 이력을 모두 겪은 상태로 진화함(Cold Start 해소)
+
+<!-- diagram: plan-walk-forward -->
+```mermaid
+flowchart LR
+  SRC[("레거시 DB<br/>과거 Qual 이력 3,000건<br/>당시 로그·부품·조치 포함")] --> RC["과거 건을 그 시점의<br/>가상 요청으로 재구성"]
+  subgraph EV["진화 구간 · 분기 단위 Walk-forward"]
+    direction LR
+    Q1["분기 k 재생<br/>당시 데이터만으로 판단"] --> SC["실제 결과와 채점"] --> L["L3 Evolve<br/>교훈 · 코드 변이"] --> Q2["분기 k+1 재생<br/>= 진화 결과 검증"]
+    Q2 -.->|"10개 분기 반복"| SC
+  end
+  RC --> Q1
+  Q2 --> H["Held-out 최근 6개월 494건<br/>진화 없이 평가만"] --> GO(["운영 투입 승인"])
+  G["Time-Travel Guard<br/>event_ts ≤ replay_clock"] -.->|"미래 데이터 차단"| Q1 & Q2 & H
+```
+> **그림 3.** Walk-forward 사전 검증 — 미래 데이터를 막은 채 과거 3,000건으로 진화·검증 · 이미지: [SVG](diagrams/plan-walk-forward.svg) · [PNG](diagrams/plan-walk-forward.png)
+
 
 6. 경험 메모리 및 판단 진화(Outcome Learning): 운영 중 모든 AutoQual 건의 추천 내용, 엔지니어 수정(Override)과 사유, 실제 Qual 결과(1차 Pass 여부, 최종 Seasoning 매수, Fail 항목)를 경험 메모리에 축적. 성공한 실행은 스킬로, 실패·Override는 교훈(Lesson)으로 저장해 유사 요청 시 Agent가 참고. L3 Evolve Loop가 장비 모델·PM 종류별 추천 편향(예: 특정 모델 Wet Clean 후 Seasoning 과소 추천)을 감지하면 판단 로직 변형 후보를 생성하고, 진화에 쓰지 않은 기간 데이터로 백테스트해 1차 Pass율이 개선된 경우에만 채택. 쓸수록 현장 결과에 맞춰 Qual 판단이 정확해지는 구조
 
@@ -120,6 +174,14 @@ AutoQual Self-Evolving Agent: CodeAct와 Loop Engineering으로 스스로 생성
 9. Jev 판단 게이트: 코드 작성·계획은 LLM이, 루프 안에서 반복되는 짧은 분기 판단은 Jev가 담당. Agent 편성(복수 선택), 기존 Agent로 처리 가능 여부(예/아니오 확률), 오류 유형 분류(선택), 루프 종료 여부(점수), Agent 병합·진화·폐기 필요 여부(예/아니오 확률)에 사용하며, 보정된 확률을 임계값으로 써서 자율 처리·LLM 에스컬레이션·사람 확인을 구분. Spec 판정·권한 체크는 결정적 코드가 수행
 
 10. 운영 UI: 채팅 요청, 실시간 Agent 편성 그래프, CodeAct 실행 코드·루프 트레이스, 장비 상태 변경 승인 패널, Self-Healing·진화 리포트, 이력 리플레이 진화 곡선, 진화 아카이브(채택·기각·폐기 후보와 점수), Agent 생명주기(probation·active·deprecated·retired) 및 Lineage 뷰 제공
+
+* 핵심 차별 기술 (위 기능을 관통하는 3대 설계 원칙)
+
+  | 차별 기술 | 무엇을 하나 | 왜 필요한가 |
+  | --- | --- | --- |
+  | **Zero-Hallucination 메모리 아키텍처** | RAG(임베딩 유사도 검색)를 **전략적으로 배제**하고, 모든 근거를 장비 모델·챔버·PM 종류·시점 키로 정확히 조회하는 DB 쿼리(CodeAct가 작성한 SQL·필터)로 가져옴. 추천 근거에는 교훈 ID·원천 이력 건수를 인용 | AutoQual은 판단 하나가 장비 Up과 Lot Scrap으로 이어지므로 **환각 리스크를 허용할 수 없음**. 근사 검색은 다른 장비·다른 PM 사례를 섞고 근거 추적을 어렵게 함. 정확 조회는 같은 질문에 항상 같은 근거를 내고, Time-Travel Guard도 조건 하나로 강제 가능 |
+  | **적대적 자율 검증 (Adversarial Self-Verification) — Grow Loop Edge 검증** | Agent Factory가 코드를 작성하는 데서 그치지 않고, 스키마 탐색으로 **자기 코드를 공격하는 엣지 케이스**(미등록 코드값·이력 0건·분/시간 단위 혼재·경계일·중복·결측)를 스스로 도출해 검증. 실패하면 스스로 고쳐(Self-Correction) 재검증하고, 루프 밖 하네스 불변식까지 통과해야만 probation 투입 | 생성 코드는 정상 케이스만 통과하고 **에러 없이 틀리는** 경우가 가장 위험함(예: 분 단위 컬럼을 시간으로 읽어 사용시간 60배 과대). 사람 리뷰 없이도 결함을 실무 투입 전에 걸러내는 **자율형 CI/CD** 환경 |
+  | **Walk-forward 사전 검증 (History Replay)** | 운영 투입 전, 과거 Qual 이력 3,000건을 시간순으로 재생해 분기마다 진화 → 다음 분기로 검증. 최근 6개월은 Held-out으로 진화 없이 평가만 수행 | **Time-Travel Guard**로 재생 시점 이후 데이터 참조를 원천 차단해 "미래를 보고 맞히는" 과적합 없이 성능을 끌어올리고, 첫날부터 수년치 경험이 반영된 상태로 운영 시작(Cold Start 해소) |
 
 ### 기대 효과
 

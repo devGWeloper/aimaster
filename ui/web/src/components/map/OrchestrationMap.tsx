@@ -6,8 +6,9 @@ import { hub } from '@/lib/hub';
 import { ms, useApp } from '@/store/store';
 import type { AnyEv } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { buildGraph, curve, SUPER, W, H } from './layout';
+import { buildGraph, curve, W, H } from './layout';
 import { AgentNode, PortNode, SkillNode, SuperNode } from './nodes';
+import Spotlight from './Spotlight';
 
 const nodeTypes = { super: SuperNode, agent: AgentNode, skill: SkillNode, port: PortNode };
 
@@ -39,7 +40,7 @@ function Inner({ live }: { live: boolean }) {
   posRef.current = graph.pos;
 
   useEffect(() => {
-    const fit = () => rf.fitView({ padding: 0.04, duration: 250 });
+    const fit = () => rf.fitView({ padding: 0.015, duration: 250 });
     const t = setTimeout(fit, 50);
     const ro = new ResizeObserver(() => fit());
     if (wrap.current) ro.observe(wrap.current);
@@ -51,11 +52,11 @@ function Inner({ live }: { live: boolean }) {
       const P = posRef.current;
       const a = P.get(from) || P.get('super_agent')!, b = P.get(to);
       if (!a || !b) return;
-      const dur = ms(700) || 250;
+      const dur = ms(900) || 250;
       const id = ++pid.current;
       const d = curve(a, b, from === 'super_agent' || !P.get(from) ? 0.15 : 0.25);
-      setPulses((p) => [...p.slice(-12), { id, d, kind, label, dur, mx: (a[0] + b[0]) / 2, my: (a[1] + b[1]) / 2 - 8 }]);
-      setTimeout(() => setPulses((p) => p.filter((x) => x.id !== id)), Math.max(dur, label ? (ms(2400) || 900) : dur) + 80);
+      setPulses((p) => [...p.slice(-12), { id, d, kind, label, dur, mx: (a[0] + b[0]) / 2, my: (a[1] + b[1]) / 2 - 10 }]);
+      setTimeout(() => setPulses((p) => p.filter((x) => x.id !== id)), Math.max(dur, label ? (ms(3200) || 900) : dur) + 80);
     };
     const STEP: Record<string, string> = { parse_request: '요청 해석', retrieve_memory: '경험 메모리 조회', jev_route: 'Jev 편성', grow_subgraph: 'Grow 대기', plan_codeact: 'CodeAct 계획 작성', execute_sandbox: '샌드박스 실행',
       observe: '사후 검증', mark_unavailable: '확인 불가 표시 → Heal', synthesize: '결과 종합', respond: '응답', await_qual_result: 'Qual 결과 대기', deterministic_judge: 'judge_qual 판정', rework_plan: '재작업 계획', approval_gate: '사람 승인 대기', apply_state_change: '상태 반영', log_experience: '경험 기록' };
@@ -66,9 +67,9 @@ function Inner({ live }: { live: boolean }) {
       hub.on('redirect', (ev: AnyEv) => pulse(ev.agent_id, ev.to, 'redirect', '리다이렉트')),
       hub.on('node', (ev: AnyEv) => {
         if (ev.loop === 'L1' && STEP[ev.node]) setStep({ text: STEP[ev.node], cls: ev.node === 'approval_gate' ? 'gate' : ev.node === 'mark_unavailable' ? 'bad' : 'l1' });
-        if (ev.loop === 'L2' && ev.sub !== 'grow') setStep({ text: `Self-Healing ${ev.heal_id} — ${ev.detail || ''}`.slice(0, 64), cls: 'l2' });
-        if (ev.loop === 'L2' && ev.sub === 'grow') setStep({ text: `Agent Factory ${ev.grow_id} — ${ev.detail || ''}`.slice(0, 64), cls: 'l2' });
-        if (ev.loop === 'L3') setStep({ text: `L3 Evolve ${ev.run_id} — ${ev.detail || ''}`.slice(0, 64), cls: 'l3' });
+        if (ev.loop === 'L2' && ev.sub !== 'grow') setStep({ text: `Self-Healing ${ev.heal_id} — ${ev.detail || ''}`, cls: 'l2' });
+        if (ev.loop === 'L2' && ev.sub === 'grow') setStep({ text: `Agent Factory ${ev.grow_id} — ${ev.detail || ''}`, cls: 'l2' });
+        if (ev.loop === 'L3') setStep({ text: `L3 Evolve ${ev.run_id} — ${ev.detail || ''}`, cls: 'l3' });
       }),
       hub.on('response', (ev: AnyEv) => { if (ev.rtype && !['rework', 'judge', 'state'].includes(ev.rtype)) setStep({ text: '응답 완료', cls: 'ok' }); }),
       hub.on('judge', (ev: AnyEv) => setStep({ text: `judge_qual → ${ev.judgement?.result} (결정적 코드)`, cls: ev.judgement?.result === 'PASS' ? 'ok' : 'bad' })),
@@ -79,8 +80,18 @@ function Inner({ live }: { live: boolean }) {
   }, [live]);
 
   return (
-    <div ref={wrap} className="relative h-full w-full">
-      <ReactFlow nodes={graph.nodes} edges={graph.edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} fitView fitViewOptions={{ padding: 0.04 }} minZoom={0.2} maxZoom={2}
+    <div className="flex h-full w-full flex-col">
+      {live && (
+        <div className="flex h-8 flex-none items-center gap-2 px-4">
+          <span className="flex-none text-[11.5px] font-semibold text-ink-3">Super Agent 현재 단계</span>
+          {step ? (
+            <span key={step.text} className={cn('flash-in min-w-0 truncate rounded-full border px-3 py-0.5 text-[13px] font-semibold text-ink', `lane-${step.cls} border-[color-mix(in_oklab,var(--c)_60%,transparent)] bg-[color-mix(in_oklab,var(--c)_12%,transparent)]`)} title={step.text}>{step.text}</span>
+          ) : <span className="text-[12px] text-ink-3">대기 중 — Autopilot을 시작하거나 오른쪽 대화창에 요청하세요</span>}
+          {req && <span className="ml-auto flex-none font-mono text-[11px] text-ink-3">{req}</span>}
+        </div>
+      )}
+      <div ref={wrap} className="relative min-h-0 flex-1">
+      <ReactFlow nodes={graph.nodes} edges={graph.edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} fitView fitViewOptions={{ padding: 0.015 }} minZoom={0.2} maxZoom={2}
         nodesDraggable={false} nodesConnectable={false} elementsSelectable={false} zoomOnScroll={false} zoomOnPinch={false} panOnDrag={false} panOnScroll={false} zoomOnDoubleClick={false} preventScrolling={false} proOptions={{ hideAttribution: true }}>
         <svg style={{ position: 'absolute', width: 0, height: 0 }}><defs><marker id="aq-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L8 4L0 8z" fill="#4a5a6a" /></marker></defs></svg>
         <ViewportPortal>
@@ -91,19 +102,14 @@ function Inner({ live }: { live: boolean }) {
                 <circle r={5} fill={PULSE_C[p.kind] || PULSE_C['']} style={{ filter: 'drop-shadow(0 0 6px currentColor)' }}>
                   <animateMotion dur={`${p.dur}ms`} path={p.d} fill="freeze" calcMode="spline" keySplines="0.3 0 0.2 1" keyTimes="0;1" />
                 </circle>
-                {p.label && <g transform={`translate(${p.mx},${p.my})`}><rect x={-(p.label.length * 6.5 + 16) / 2} y={-10} width={p.label.length * 6.5 + 16} height={20} rx={10} fill="#1b242e" stroke={PULSE_C[p.kind] || PULSE_C['']} strokeOpacity={0.6} /><text y={4} textAnchor="middle" fill="#e8eef4" fontSize={11} fontFamily="JetBrains Mono, monospace">{p.label}</text></g>}
+                {p.label && <g transform={`translate(${p.mx},${p.my})`}><rect x={-(p.label.length * 7.6 + 18) / 2} y={-12} width={p.label.length * 7.6 + 18} height={24} rx={12} fill="#1b242e" stroke={PULSE_C[p.kind] || PULSE_C['']} strokeOpacity={0.7} /><text y={4.5} textAnchor="middle" fill="#e8eef4" fontSize={12.5} fontWeight={600} fontFamily="JetBrains Mono, monospace">{p.label}</text></g>}
               </g>
             ))}
-            {step && live && (
-              <g transform={`translate(${SUPER.x},${SUPER.y + 52})`}>
-                <rect x={-130} y={-11} width={260} height={22} rx={11} fill="#1b242e" stroke={`var(--${step.cls === 'bad' ? 'bad' : step.cls === 'ok' ? 'ok' : step.cls === 'gate' ? 'gate' : step.cls === 'l2' ? 'l2' : step.cls === 'l3' ? 'l3' : 'l1'})`} strokeOpacity={0.7} />
-                <text y={4} textAnchor="middle" fill="#e8eef4" fontSize={11.5} fontWeight={600}>{step.text.length > 34 ? `${step.text.slice(0, 33)}…` : step.text}</text>
-              </g>
-            )}
           </svg>
         </ViewportPortal>
       </ReactFlow>
-      {req && live && <div className="absolute right-3 top-2 font-mono text-[11px] text-ink-3">{req}</div>}
+      {live && <Spotlight />}
+      </div>
     </div>
   );
 }
@@ -113,7 +119,7 @@ export default function OrchestrationMap({ live = true, className }: { live?: bo
   return (
     <div className={cn('relative h-full w-full', className)}>
       <ReactFlowProvider><Inner live={live} /></ReactFlowProvider>
-      <div className="pointer-events-none absolute bottom-2 left-3 flex flex-wrap gap-3 text-[10.5px] text-ink-3">
+      <div className="pointer-events-none absolute bottom-1.5 left-3 flex max-w-[34%] flex-wrap gap-x-3 gap-y-0.5 text-[10.5px] text-ink-3">
         <span className="flex items-center gap-1"><i className="size-2 rounded-sm border border-line-2 bg-panel-2" />운영(active)</span>
         <span className="flex items-center gap-1"><i className="size-2 rounded-sm border border-dashed border-l2" />시험 운영(probation)</span>
         <span className="flex items-center gap-1"><i className="size-2 rounded-sm border border-dashed border-warn" />폐기 유예</span>

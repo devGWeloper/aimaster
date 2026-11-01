@@ -131,6 +131,24 @@ class L1:
         out: dict[str, Any] = {"request": req, "budget": s.get("budget") or {"replans": 0, "qual_fail": 0, "t0": time.time()}}
         llm_role = self.sys.llm.model_for("summary")
         self._node(s, "parse_request", f"엔티티 추출 ({llm_role})", entities=ents, rtype=req["rtype"])
+        guard = req.get("guard") or []
+        blocked = [g for g in guard if g["action"] == "block"]
+        if guard:
+            self.sys._audit({"audit_id": f"GD-{req.get('request_id') or id(req)}", "ts": now.strftime("%Y-%m-%d %H:%M:%S"),
+                             "agent_id": "super_agent", "version": None, "code_hash": None, "elapsed_ms": 0, "ok": int(not blocked),
+                             "error": "IntentGuard" if blocked else None, "tool_calls": [],
+                             "blocked": [{"rule": g["category"], "action": g["action"]} for g in guard], "replay": 0})
+        if blocked:
+            out["clarify"] = "요청을 처리하지 않았습니다 — " + " ".join(g["message"] for g in blocked)
+            self._thought(s, out["clarify"], "guard")
+            return out
+        for g in guard:
+            self._thought(s, g["message"], "guard")
+        if ents.get("unknown_eqp"):
+            out["clarify"] = (f"{ents['eqp_id']}는 등록되지 않은 장비입니다. 등록 장비 ID를 확인해 주세요 "
+                              f"(예: ETCH-07, CVD-05, PVD-03). 추측으로 다른 장비를 조회하지 않습니다.")
+            self._thought(s, out["clarify"], "ask")
+            return out
         if req.get("ambiguous"):
             cands = []
             for eqp in req["ambiguous"]:

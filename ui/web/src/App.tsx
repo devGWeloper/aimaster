@@ -7,6 +7,9 @@ import ChapterStrip from '@/components/shell/ChapterStrip';
 import ApprovalGate from '@/components/shell/ApprovalGate';
 import Toasts from '@/components/shell/Toasts';
 import Drawer from '@/components/shell/Drawer';
+import Intro from '@/components/shell/Intro';
+import LoopBeacon from '@/components/shell/LoopBeacon';
+import DemoPage from '@/pages/Demo';
 import LivePage from '@/pages/Live';
 import LoopPage from '@/pages/Loop';
 import EvolvePage from '@/pages/Evolve';
@@ -34,16 +37,19 @@ export default function App() {
         <ChapterStrip />
         <Rail />
         <main className="relative min-h-0 min-w-0">
+          {view === 'demo' && <DemoPage />}
           {view === 'live' && <LivePage />}
           {view === 'loop' && <LoopPage />}
           {view === 'evolve' && <EvolvePage />}
           {view === 'agents' && <AgentsPage />}
           {view === 'approvals' && <ApprovalsPage />}
           {view === 'fab' && <FabPage />}
+          <LoopBeacon />
         </main>
       </div>
       <ApprovalGate />
       <Drawer />
+      <Intro />
       <Toasts />
     </TooltipProvider>
   );

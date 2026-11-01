@@ -7,8 +7,11 @@ export type FocusKind = 'request' | 'parse' | 'route' | 'jev' | 'code' | 'agent'
 export interface Focus { id: number; kind: FocusKind; lane: Lane | ''; title: string; ev: AnyEv; at: number; vts?: string; key?: string }
 export interface LaneState { run: string | null; cur: string | null; visited: string[]; status: string; stopped: boolean; wait: string | null; backHot: boolean; bubble: string; bad: boolean; at: number }
 export interface Trail { lane: Lane; label: string; bad: boolean; n: number }
+export interface RosterRow { agent_id: string; kind: string; version: string | null; status: string }
+export interface DemoState { id: string | null; step: number; phase: string; baseline: RosterRow[] | null; roster: RosterRow[] | null; error?: string; done: number[] }
 export interface LiveState {
-  chapter: { id: string; title: string; date: string; desc: string } | null;
+  demo: DemoState;
+  chapter: { id: string; title: string; date: string; desc: string; biz?: string } | null;
   story: string;
   question: { who: string; text: string; tag: string } | null;
   now: { lane: Lane | ''; say: string; detail: string; tone: Tone; at: number };
@@ -55,6 +58,7 @@ const slotLabel = (lane: Lane, key: string) => LANE_SLOTS[lane].find((s) => s.ke
 
 const emptyLane = (): LaneState => ({ run: null, cur: null, visited: [], status: '대기', stopped: false, wait: null, backHot: false, bubble: '', bad: false, at: 0 });
 export const initialLive = (): LiveState => ({
+  demo: { id: null, step: 0, phase: '', baseline: null, roster: null, done: [] },
   chapter: null, story: '', question: null, now: { lane: '', say: '', detail: '', tone: '', at: 0 }, trail: [],
   lanes: { L1: emptyLane(), HEAL: emptyLane(), GROW: emptyLane(), L3: emptyLane() },
   counters: { code: 0, calls: 0, jev: 0, heal: 0, grow: 0, evolve: 0, human: 0 },
@@ -123,11 +127,21 @@ export function liveReduce(L: LiveState, ev: AnyEv) {
   switch (ev.type) {
     case 'chapter':
       if (ev.phase === 'start') {
-        L.chapter = { id: ev.id, title: ev.title, date: ev.date, desc: ev.desc };
+        L.chapter = { id: ev.id, title: ev.title, date: ev.date, desc: ev.desc, biz: ev.biz };
         if (!ev.backlog) for (const k of Object.keys(L.lanes) as Lane[]) L.lanes[k] = emptyLane();
       }
       break;
     case 'story': L.story = ev.text; break;
+    case 'demo': {
+      const D = L.demo;
+      if (ev.id === 'prepare') { D.phase = `prepare:${ev.phase}`; break; }
+      if (ev.phase === 'baseline') { Object.assign(D, { id: ev.id, baseline: ev.roster, roster: ev.roster, done: [], error: undefined }); break; }
+      if (D.id !== ev.id) Object.assign(D, { id: ev.id, baseline: null, done: [] });
+      D.step = ev.step; D.phase = ev.phase; D.error = ev.error;
+      if (ev.roster) D.roster = ev.roster;
+      if (ev.phase === 'done' && !D.done.includes(ev.step)) D.done.push(ev.step);
+      break;
+    }
     case 'request':
       if (ev.source === 'sim') break;
       L.question = { who: ev.user || '엔지니어', text: ev.text, tag: ev.request_id };

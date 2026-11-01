@@ -17,6 +17,15 @@ from fastapi.testclient import TestClient  # noqa: E402
 from ui import server  # noqa: E402
 
 
+def tearDownModule():
+    import shutil
+    try:
+        server.sysm().store.close()
+    except Exception:  # noqa: BLE001
+        pass
+    shutil.rmtree(_TMP, ignore_errors=True)
+
+
 class ApiTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -63,6 +72,12 @@ class ApiTest(unittest.TestCase):
         k = self.client.get("/api/kpi").json()
         self.assertIn("unapproved", k)
         self.assertEqual(k["unapproved"]["value"], 0)
+
+    def test_demo_requires_prepare(self):
+        demos = self.client.get("/api/state").json()["demos"]
+        self.assertEqual(set(demos), {"grow", "heal", "evolve", "retire"})
+        self.assertFalse(any(demos.values()))          # 새 런타임에는 시연 체크포인트가 없다
+        self.assertEqual(self.client.post("/api/demo/run", json={"id": "grow", "step": 0}).status_code, 409)
 
     def test_chat_requires_text(self):
         r = self.client.post("/api/chat", json={"text": ""})
