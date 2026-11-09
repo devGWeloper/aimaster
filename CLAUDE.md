@@ -108,6 +108,7 @@ aimaster/
 - [x] KPI 측정 — `eval/kpi.py`, 운영 UI KPI 화면
 - [x] E2E 서비스 개발 — 운영 UI를 React(Vite + Tailwind + shadcn/ui + React Flow)로 전면 교체(`ui/web`), API 스모크 테스트(`tests/test_api.py`), E2E 문서
 - [x] 테스트 및 고도화 — `eval/qa_suite.py` 레드팀·품질·성능 실측, 의도 가드(`intent_guard`), 「시연」 화면(시나리오 4개를 질문·사건 단위 단계로, 체크포인트 복원 재현 · Agent 명단 변화 표시), Agent 변경 스포트라이트, 설명용 재생 속도(`narrate`)
+- [x] 최종 산출물 — `docs/final/01~06.md`(개요·아키텍처·기능/Agent·KPI·문제 해결·회고, 01_ 문서 통합본), 최종 발표 PPT(`docs/AI_Master_Project_최종발표_*.pptx`, 발표자 노트 포함)
 - [ ] 사내 LLM API 실연동 검증 (`config/llm.json` 설정 후 온라인 모드 실행)
 
 ## 작업 규칙
