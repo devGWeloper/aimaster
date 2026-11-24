@@ -15,34 +15,13 @@
 
 다른 후보(eWorks Self-Healing, Persona Swarm, Talk-to-Fab)는 `docs/00_ideation/`에 기록으로만 보존하며, 이후 작업은 모두 AutoQual 기준으로 진행한다.
 
-## 레포 구조
+## 레포 주의사항
 
-```
-aimaster/
-├─ CLAUDE.md
-├─ docs/                                   # 제출 산출물은 하위 폴더 없이 여기에 모은다
-│  ├─ 00_ideation/                         # 주제 선정 전 후보 기록 (보존만, 수정하지 않음)
-│  │  ├─ 01_eWorks_Self-Healing_Hybrid_Agent/   # AutoQual의 전신 (v1 → v2 → 기획서)
-│  │  ├─ 02_Persona_Swarm/
-│  │  └─ 03_Talk-to-Fab/                   # 초안·시나리오 + demo/ (디지털트윈 웹 데모)
-│  ├─ 01_AutoQual_Self-Evolving_Agent_*.md # 산출물 (아래 문서 맵)
-│  ├─ diagrams/                            # 문서 도식 이미지(SVG·PNG) — 원본은 각 md 안의 Mermaid 블록, `python docs/diagrams/render.py`로 생성
-│  └─ format.md                            # 설계서 양식
-│
-├─ mock_env/      # 목업 Fab: config·simulator(Qual 물리)·generate(DB 생성, 시드 고정)·formats(SW 버전별 로그)·world(데이터 서버·장애 주입·MES)
-│                 #   data/*.db 는 생성물 (python -m mock_env.generate 로 재생성, git 제외)
-├─ autoqual/      # 에이전트 본체: system·store·sandbox(CodeAct)·tools·jev·llm(사내 API 어댑터)·registry·runtime·super_agent·judge·memory
-│  ├─ genomes/    #   Agent·스킬 Genome 소스 빌더 + 오프라인 Playbook (기능 플래그 → 실제 코드)
-│  ├─ loops/      #   l1(LangGraph L1), l2_heal, l2_grow(Agent Factory), l3_evolve(리플레이 분기 진화), l3_ops(운영 진화·롤백·폐기), replay
-│  ├─ ops.py      #   요청 실행기 + 배경 운영 시뮬레이터(가상 엔지니어)
-│  └─ story.py    #   Autopilot 타임라인 (SC-006 → SC-009, 챕터 체크포인트)
-├─ eval/          # 루프 밖 고정: policy.json(예산·임계값), harness(테스트·후보 평가), testcases(오라클), kpi, qa_suite(레드팀·품질·성능 실측 → qa_result.json)
-├─ ui/            # 운영 UI: server.py (FastAPI + SSE, web/dist 서빙) · web/ (React 19 + Vite + Tailwind v4 + shadcn/ui + React Flow SPA)
-│  └─ web/src/    #   store/(SSE → live·chat·trace·biz·evolve 슬라이스) · pages/(시연·라이브·루프·진화·Agent·승인·Fab) · components/(map 편성 맵, loop 다이어그램·트레이스, evolve, live, shell) — dist/는 커밋(빌드 산출물)
-├─ config/        # llm.example.json(사내 LLM API), jev.example.json — 실제 llm.json·jev.json 은 git 제외
-├─ runtime/       # 실행 상태(agentstore.db·legacy_live.db·checkpoints) — git 제외
-└─ tests/         # python -m unittest discover tests
-```
+- `docs/00_ideation/`은 주제 선정 전 후보 기록 — 보존만 하고 수정하지 않는다
+- 제출 산출물은 하위 폴더 없이 `docs/` 바로 아래에 모은다
+- 문서 도식(`docs/diagrams/` SVG·PNG)의 원본은 각 md 안의 Mermaid 블록 — `python docs/diagrams/render.py`로 생성
+- `mock_env/data/*.db`·`runtime/`·`config/llm.json`·`config/jev.json`은 생성물·로컬 설정이라 git 제외
+- `ui/web/dist/`는 빌드 산출물이지만 커밋한다 (FastAPI가 서빙)
 
 실행: `pip install -r requirements.txt` → `python -m mock_env.generate` → `python -m ui.server` (http://127.0.0.1:8766) → UI에서 Autopilot 시작. 프론트 수정 시 `cd ui/web && npm install && npm run build`(dist/ 갱신 후 커밋), 개발 중에는 `npm run dev`(5173, /api 프록시). 테스트: `python -m unittest discover tests`. LLM은 사내 제공 API만 사용한다(`config/llm.json`, 키는 환경변수). 미설정 시 오프라인 Playbook으로 결정적 재현.
 
@@ -65,14 +44,7 @@ aimaster/
 
 사내 실데이터는 사용할 수 없다. **기준정보 DB, FDC 센서 트레이스, 알람 로그, 부품 교체 이력, 레거시 Qual 이력 DB 등 모든 데이터·로그는 Claude가 목업으로 생성한다.** 목업은 데모용 장난감이 아니라 Agent의 Heal·Grow·Evolve가 실제로 일어날 만큼 현실적이어야 한다.
 
-- 규모 (기획서 기준): 장비 30대 · 챔버 90개 · PM 종류 8개, Qual 이력 3,000건 / 3년치 (엔지니어 조치 기록 포함)
-- 현실감 요소를 의도적으로 넣는다
-  - 레거시 DB: 약어 컬럼, 문서화 안 된 코드값, 폐기 테이블 잔존, 이관·미적재 구간
-  - 장비 SW 버전별로 다른 로그 포맷 (기간에 따라 파서가 깨지도록)
-  - Seasoning 매수 ↔ 1차 Pass율 관계, 장비 모델·PM 종류별 편향 등 진화로 학습할 수 있는 숨은 패턴
-  - 센서 노이즈, 결측, 단위 혼재 같은 실무형 지저분함
-- 장애 주입기: 로그 포맷 변경, DB 컬럼 변경, 타임아웃, 단위 변경을 재현할 수 있게 만든다
-- 생성 스크립트는 **시드 고정으로 재현 가능**하게 하고, 데이터에 심은 패턴·정답(ground truth)은 별도로 문서화해 KPI 평가에 쓴다
+- 목업 생성 상세 규칙(규모·현실감 요소·장애 주입기·시드 고정)은 `mock_env/CLAUDE.md`
 - 실제 회사명·실제 장비 레시피·실제 사내 코드 체계를 쓰지 않는다. 용어와 구조만 실무 경험에 맞추고 ID·값은 가상으로 만든다
 
 ## 설계상 불변 규칙 (구현 시 지킬 것)
